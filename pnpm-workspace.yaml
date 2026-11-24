@@ -1,0 +1,17 @@
+packages:
+  - packages/*
+  - apps/*
+
+# @cloudflare/unenv-preset 2.16.2 (latest) peers unenv 2.0.0-rc.24 while
+# @alchemy.run/cloudflare-runtime ships rc.25. Allow only that pairing.
+peerDependencyRules:
+  allowedVersions:
+    "@cloudflare/unenv-preset>unenv": 2.0.0-rc.25
+
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
+
+# lefthook's postinstall is redundant: the root `prepare` script runs `lefthook install`.
+ignoredBuiltDependencies:
+  - lefthook

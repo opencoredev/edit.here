@@ -1,0 +1,9 @@
+pre-commit:
+  piped: true
+  commands:
+    check:
+      priority: 1
+      run: pnpm check
+    test:
+      priority: 2
+      run: pnpm test

@@ -1,0 +1,34 @@
+{
+  "name": "edit-here",
+  "private": true,
+  "homepage": "https://edit.here",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opencoredev/edit.here.git"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "oxlint",
+    "format": "oxfmt",
+    "check": "pnpm typecheck && pnpm lint",
+    "env:check": "varlock load",
+    "prepare": "lefthook install || true"
+  },
+  "devDependencies": {
+    "lefthook": "^2.2.2",
+    "oxfmt": "^0.79.0",
+    "oxlint": "^1.94.0",
+    "turbo": "^2.11.13",
+    "typescript": "6.0.3",
+    "varlock": "^1.25.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.18.3"
+}

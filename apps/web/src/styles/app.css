@@ -1,0 +1,461 @@
+/*
+ * Layer order: Tailwind theme/base first, then Graphical's component styles and zriz's cropper
+ * styles in `components`, then Tailwind utilities so app layout utilities can still win.
+ */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss";
+@import "../components/graphical/styles.css" layer(components);
+@import "@zriz/react/styles.css";
+
+/* ---------------------------------------------------------------------------
+ * Fonts (self-hosted, OFL; licenses in /public/fonts).
+ * The theme's role stack is `"Sidebar Inter", sans-serif`, so Inter registers under that alias.
+ */
+@font-face {
+  font-family: "Sidebar Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/InterVariable.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("/fonts/JetBrainsMono.woff2") format("woff2");
+}
+
+/* ---------------------------------------------------------------------------
+ * Tailwind tokens alias the Graphical theme variables that GraphicalProvider sets on
+ * `.graphical-theme` (and carries into portalled popups). `inline` keeps the var() reference
+ * so utilities follow the active color mode.
+ */
+@theme inline {
+  --font-ui: var(--font-body);
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-canvas: var(--cte-canvas);
+  --color-surface: var(--cte-surface);
+  --color-surface-muted: var(--cte-surface-muted);
+  --color-ink: var(--cte-text);
+  --color-ink-muted: var(--cte-text-muted);
+  --color-line: var(--cte-border);
+  --color-brand: var(--cte-accent);
+  --color-brand-ink: var(--cte-accent-text);
+  --color-danger: var(--cte-danger);
+  --color-ok: var(--success);
+  --color-warn: var(--warning);
+
+  --color-n1: var(--neutral-1);
+  --color-n2: var(--neutral-2);
+  --color-n3: var(--neutral-3);
+  --color-n4: var(--neutral-4);
+  --color-n5: var(--neutral-5);
+  --color-n6: var(--neutral-6);
+  --color-n7: var(--neutral-7);
+  --color-n8: var(--neutral-8);
+  --color-n9: var(--neutral-9);
+  --color-n10: var(--neutral-10);
+
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-s);
+  --radius-md: var(--radius-m);
+  --radius-lg: var(--radius-l);
+
+  --shadow-sm: var(--shadow-s);
+  --shadow-md: var(--shadow-m);
+  --shadow-lg: var(--shadow-l);
+
+  --ease-alloy: var(--motion-easing);
+}
+
+/* ---------------------------------------------------------------------------
+ * Page chrome outside the provider scope (overscroll, scrollbars). Literal values mirror the
+ * theme's neutral-1 per mode; inside the app everything reads theme variables.
+ */
+@layer base {
+  :root {
+    --page-canvas-dark: #171719;
+    --page-canvas-light: #ffffff;
+    background-color: var(--page-canvas-dark);
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  :root[data-theme="light"] {
+    background-color: var(--page-canvas-light);
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  /* An editor, not a page: no rubber-band bounce or pull-to-refresh while dragging on a phone. */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+
+  body {
+    margin: 0;
+    font-family: "Sidebar Inter", sans-serif;
+    font-optical-sizing: auto;
+  }
+
+  :where(p, li, figcaption, dd) {
+    text-wrap: pretty;
+  }
+
+  /* Tailwind v4 leaves buttons on the default arrow; anything clickable shows the hand. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="radio"]:not([aria-disabled="true"]),
+  [role="switch"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]),
+  a[href],
+  summary,
+  label[for] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}
+
+@layer components {
+  /* The provider's root fills the viewport and owns the canvas color. */
+  .app-root {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--cte-canvas);
+    color: var(--cte-text);
+    font-family: var(--font-body);
+    font-size: var(--cte-font-size);
+    line-height: var(--cte-line-height);
+    letter-spacing: var(--cte-letter-spacing);
+
+    /* zriz cropper accents follow the Alloy brand color. */
+    --zriz-accent: var(--color-1);
+    --zriz-frame: var(--neutral-10);
+    --zriz-line: var(--neutral-9);
+    --zriz-scrim: color-mix(in srgb, var(--neutral-1) 72%, transparent);
+  }
+
+  /* Raised Alloy panel: theme surface gradient + edge + elevation. */
+  .alloy-panel {
+    background-color: var(--neutral-2);
+    background-image: var(--surface-raised-image);
+    box-shadow: var(--surface-raised-shadow), var(--border-shadow-s), var(--shadow-s);
+    border-radius: var(--radius-m);
+  }
+
+  /* The home drop plate: the whole plate opens the picker, so it answers hover like a button. */
+  .drop-plate {
+    transition:
+      box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1),
+      background-color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .drop-plate:hover,
+  .drop-plate[data-active] {
+    background-color: color-mix(in srgb, var(--neutral-2) 94%, var(--color-1));
+    box-shadow:
+      var(--surface-raised-shadow),
+      0 0 0 1px color-mix(in srgb, var(--color-1) 55%, transparent),
+      var(--shadow-m);
+  }
+
+  /* Floating editor bar and its options tray: raised surface with a stronger lift. */
+  .dock-surface {
+    background-color: var(--neutral-2);
+    background-image: var(--surface-raised-image);
+    box-shadow: var(--surface-raised-shadow), var(--border-shadow-s), var(--shadow-l);
+  }
+
+  @media (max-width: 639.98px) {
+    /* Floating pills in the phone's bottom dock: a softer lift than the desktop bar. */
+    .dock-surface {
+      box-shadow: var(--surface-raised-shadow), var(--border-shadow-s), var(--shadow-m);
+    }
+  }
+
+  /*
+   * A row that scrolls sideways. `FadeScroller` sets data-fade-start / data-fade-end while more
+   * content hides past an edge, and that edge fades out, hinting the row can be swiped.
+   */
+  .fade-scroller {
+    --fade-start: 0px;
+    --fade-end: 0px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--fade-start),
+      #000 calc(100% - var(--fade-end)),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--fade-start),
+      #000 calc(100% - var(--fade-end)),
+      transparent
+    );
+  }
+
+  .fade-scroller::-webkit-scrollbar {
+    display: none;
+  }
+
+  .fade-scroller[data-fade-start] {
+    --fade-start: 28px;
+  }
+
+  .fade-scroller[data-fade-end] {
+    --fade-end: 28px;
+  }
+
+  /*
+   * Home drafting mat: a fine dot grid that fades out toward the edges. Drawn on a pseudo
+   * element so the fade mask never touches the content.
+   */
+  .home-mat {
+    isolation: isolate;
+  }
+
+  .home-mat::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--neutral-4) 85%, transparent) 1px,
+      transparent 1.25px
+    );
+    background-size: 20px 20px;
+    background-position: center;
+    -webkit-mask-image: radial-gradient(ellipse 70% 65% at 50% 45%, #000 30%, transparent 100%);
+    mask-image: radial-gradient(ellipse 70% 65% at 50% 45%, #000 30%, transparent 100%);
+  }
+
+  /* Sample rows on the home page: flat neutral-2 rows with a hairline edge; brighten on hover. */
+  .sample-pill {
+    background-color: var(--neutral-2);
+    box-shadow: var(--border-shadow-s);
+    transition:
+      background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .sample-pill:not(:disabled):hover {
+    background-color: var(--neutral-3);
+    box-shadow:
+      var(--border-shadow-s),
+      0 0 0 1px color-mix(in srgb, var(--color-1) 22%, transparent);
+  }
+
+  /* The "no frame" swatch: a transparency checkerboard struck through. */
+  .swatch-none {
+    background:
+      linear-gradient(
+        to top right,
+        transparent calc(50% - 0.75px),
+        var(--cte-danger) calc(50% - 0.75px),
+        var(--cte-danger) calc(50% + 0.75px),
+        transparent calc(50% + 0.75px)
+      ),
+      repeating-conic-gradient(var(--neutral-4) 0% 25%, var(--neutral-1) 0% 50%) 50% / 8px 8px;
+  }
+
+  /* Recent project cards: the thumbnail sits in a small recessed well. */
+  .recent-thumb {
+    background-color: var(--neutral-1);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--neutral-5) 35%, transparent);
+  }
+
+  .recent-remove {
+    background-color: color-mix(in srgb, var(--neutral-2) 88%, transparent);
+    box-shadow: var(--border-shadow-s);
+    backdrop-filter: blur(6px);
+  }
+
+  .recent-remove:hover {
+    background-color: var(--neutral-3);
+  }
+
+  /*
+   * Image stage drafting grid: dots on the stage behind the canvas. PreviewStage sets the size
+   * and position from the zoom and pan, so the grid moves with the image.
+   */
+  .stage-grid {
+    background-image: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--neutral-5) 55%, transparent) 1px,
+      transparent 1.4px
+    );
+    background-origin: content-box;
+    background-clip: border-box;
+  }
+
+  /*
+   * Split Export button: two primary buttons that read as one. The touching corners are square,
+   * and so is the inner bevel along the seam (Graphical sets `--button-bevel-radius` inline,
+   * hence !important). The halves overlap by a pixel, so their edge rings merge into one crisp
+   * divider instead of a double line.
+   */
+  .export-split-left {
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    --button-bevel-radius: calc(var(--radius-s) - 1px) 0 0 calc(var(--radius-s) - 1px) !important;
+  }
+
+  .export-split-right {
+    position: relative;
+    margin-left: -1px;
+    border-top-left-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+    --button-bevel-radius: 0 calc(var(--radius-s) - 1px) calc(var(--radius-s) - 1px) 0 !important;
+  }
+
+  /*
+   * The inner bevel draws its own 1px ring inside each half, which put a light line on both
+   * sides of the shared edge (a doubled seam, worst in light mode). Each half's bevel runs 1px
+   * past the seam and is clipped there, so its top and bottom lines meet across the divider and
+   * only the merged edge ring shows between the halves.
+   */
+  .export-split-left::before {
+    right: -1px !important;
+    clip-path: inset(0 1px 0 0);
+  }
+
+  .export-split-right::before {
+    left: -1px !important;
+    clip-path: inset(0 0 0 1px);
+  }
+
+  /*
+   * Graphical presses a button down 1px on :active. In the split control that moved only the
+   * pressed half, so the chevron dropped below the main button. Both halves stay level; the
+   * press shows as a slight dim instead (Graphical writes `filter` inline, hence !important).
+   */
+  .export-split-left:active,
+  .export-split-right:active {
+    transform: none !important;
+  }
+
+  .export-split-left:active:not(:disabled),
+  .export-split-right:active:not(:disabled) {
+    filter: brightness(0.92) !important;
+  }
+
+  /* Recessed well for canvases and media stages. */
+  .alloy-well {
+    background-color: var(--neutral-1);
+    background-image: var(--surface-recessed-image);
+    box-shadow: var(--surface-recessed-shadow), var(--border-shadow-s);
+    border-radius: var(--radius-m);
+  }
+
+  /* Keycaps for shortcut hints and the shortcut sheet. */
+  kbd,
+  .keycap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: var(--radius-xs);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--cte-text-muted);
+    background-color: var(--neutral-2);
+    background-image: var(--surface-raised-image);
+    box-shadow:
+      var(--surface-raised-shadow),
+      var(--border-shadow-s),
+      0 1px 0 0 color-mix(in srgb, var(--neutral-10) 8%, transparent);
+    white-space: nowrap;
+  }
+
+  /* Timecodes and counters. */
+  .timecode {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+  }
+
+  /* Dashed drop target edge drawn with box-shadow so layout never shifts. */
+  .drop-target {
+    background-image:
+      linear-gradient(90deg, var(--neutral-5) 50%, transparent 50%),
+      linear-gradient(90deg, var(--neutral-5) 50%, transparent 50%),
+      linear-gradient(0deg, var(--neutral-5) 50%, transparent 50%),
+      linear-gradient(0deg, var(--neutral-5) 50%, transparent 50%);
+    background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+    background-size:
+      10px 1px,
+      10px 1px,
+      1px 10px,
+      1px 10px;
+    background-position:
+      0 0,
+      0 100%,
+      0 0,
+      100% 0;
+  }
+
+  .drop-target[data-active] {
+    background-image:
+      linear-gradient(90deg, var(--color-1) 50%, transparent 50%),
+      linear-gradient(90deg, var(--color-1) 50%, transparent 50%),
+      linear-gradient(0deg, var(--color-1) 50%, transparent 50%),
+      linear-gradient(0deg, var(--color-1) 50%, transparent 50%);
+    background-color: color-mix(in srgb, var(--color-1) 8%, transparent);
+  }
+
+  /* Checkerboard behind transparent media. */
+  .checkerboard {
+    background-color: var(--neutral-2);
+    background-image:
+      linear-gradient(45deg, var(--neutral-3) 25%, transparent 25%),
+      linear-gradient(-45deg, var(--neutral-3) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, var(--neutral-3) 75%),
+      linear-gradient(-45deg, transparent 75%, var(--neutral-3) 75%);
+    background-size: 16px 16px;
+    background-position:
+      0 0,
+      0 8px,
+      8px -8px,
+      -8px 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .app-root *,
+    .app-root *::before,
+    .app-root *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
