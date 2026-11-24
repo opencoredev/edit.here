@@ -22,11 +22,18 @@ import { EditorErrorBoundary } from "./components/EditorErrorBoundary";
 import { GraphicalProvider, theme, Tooltip } from "./components/graphical/index";
 import { KeybindsDialog } from "./components/KeybindsDialog";
 import { ShellHeader } from "./components/ShellHeader";
+import { StarPrompt } from "./components/StarPrompt";
 import { ToastBar } from "./components/ToastBar";
 import type { EditorCommonProps, EditorToolbarActions, PersistSnapshot } from "./editors/types";
 import { detectPlatform, isEditableTarget } from "./lib/platform";
 import { useEditorActor } from "./lib/use-editor-actor";
 import { randomId } from "./lib/new-id";
+import {
+  dismissStarPrompt,
+  isDismissedValue,
+  recordVisit,
+  STAR_PROMPT_KEY,
+} from "./lib/star-prompt";
 import { sourceThumbnail } from "./lib/thumbnail";
 import {
   clearActivePointer,
@@ -156,6 +163,33 @@ export function App() {
     () => setColorMode((mode) => (mode === "dark" ? "light" : "dark")),
     [],
   );
+
+  // --- star prompt ------------------------------------------------------------------------
+  // recordVisit counts a session once, so StrictMode running this initializer twice is safe.
+  const [starEligible, setStarEligible] = useState(recordVisit);
+  // Home keeps room for the prompt for the whole page visit, so dismissing it doesn't shift Home.
+  const [starReserve] = useState(starEligible);
+
+  const dismissStar = useCallback(() => {
+    setStarEligible(false);
+    dismissStarPrompt();
+  }, []);
+
+  // Starred, dismissed, or cleared in another tab: hide it here too.
+  useEffect(() => {
+    if (!starEligible) return;
+    const onStorage = (event: StorageEvent) => {
+      if (
+        event.key === null ||
+        (event.key === STAR_PROMPT_KEY &&
+          (event.newValue === null || isDismissedValue(event.newValue)))
+      ) {
+        setStarEligible(false);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [starEligible]);
 
   // --- files --------------------------------------------------------------------------------
   const sessionIdRef = useRef<string | undefined>(undefined);
@@ -569,6 +603,7 @@ export function App() {
             onCloseFile={closeFile}
             onCopy={runCopy}
             onExport={(format) => void runExport(format)}
+            onOpenGitHub={dismissStar}
           />
 
           <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -608,6 +643,7 @@ export function App() {
                 onDeleteRecent={deleteRecent}
                 onClearRecents={clearRecents}
                 onDismissError={() => send({ type: "error.dismiss" })}
+                reserveBottom={starReserve}
               />
             )}
           </main>
@@ -617,6 +653,11 @@ export function App() {
             activeKind={meta?.kind ?? null}
             platform={platform}
             onOpenChange={(open) => send({ type: open ? "keybinds.open" : "keybinds.close" })}
+          />
+          <StarPrompt
+            active={starEligible && boot === "ready"}
+            kind={meta?.kind ?? null}
+            onDismiss={dismissStar}
           />
           <ToastBar toast={toast} onDismiss={(id) => send({ type: "toast.dismiss", id })} />
           <DropOverlay

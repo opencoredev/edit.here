@@ -24,6 +24,7 @@ import {
 import { Icon, type IconSvgElement } from "./Icon";
 import type { EditorToolbarActions, ExportFormatChoice } from "../editors/types";
 import { formatBytes, type Platform } from "../lib/platform";
+import { REPO_URL } from "../lib/repo";
 import { Button, ButtonContent, Menu, Tooltip } from "./graphical/index";
 import { HintButton } from "./HintButton";
 
@@ -47,6 +48,8 @@ type ShellHeaderProps = {
   onCopy: () => void;
   /** Export in `format` (an `exportFormats` option id), or in the selected one. */
   onExport: (format?: string) => void;
+  /** Called when any GitHub link in the header is opened. */
+  onOpenGitHub?: (() => void) | undefined;
 };
 
 function shortcutText(combo: KeyCombo, platform: Platform): string {
@@ -56,10 +59,14 @@ function shortcutText(combo: KeyCombo, platform: Platform): string {
 /** 40×40 tap targets for header buttons on phones. */
 const PHONE_TAP = "max-sm:size-10! max-sm:px-0!";
 
-const REPO_URL = "https://github.com/opencoredev/edit.here";
-
 /** The repo link: an icon-only ghost button with the same tooltip as the header's `HintButton`s. */
-function GitHubLink({ className }: { className?: string }) {
+function GitHubLink({
+  className,
+  onOpen,
+}: {
+  className?: string;
+  onOpen?: (() => void) | undefined;
+}) {
   return (
     <Tooltip.Root>
       <Tooltip.Trigger
@@ -67,12 +74,16 @@ function GitHubLink({ className }: { className?: string }) {
           <Button
             variant="ghost"
             nativeButton={false}
-            render={({ role: _role, onKeyDown, onKeyUp, ...buttonProps }) => (
+            render={({ role: _role, onKeyDown, onKeyUp, onClick, ...buttonProps }) => (
               <a
                 {...buttonProps}
                 href={REPO_URL}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={(event) => {
+                  onClick?.(event);
+                  onOpen?.();
+                }}
                 onKeyDown={(event) => {
                   if (event.key === " ") {
                     event.preventDefault();
@@ -143,6 +154,7 @@ export function ShellHeader({
   onCloseFile,
   onCopy,
   onExport,
+  onOpenGitHub,
 }: ShellHeaderProps) {
   const kindGlyph = meta === null ? null : KIND_ICONS[meta.kind];
   const exportDisabled = actions.exportFile === undefined || actions.busy === true || exporting;
@@ -204,7 +216,7 @@ export function ShellHeader({
             {/* Desktop keeps the repo link and shortcut sheet one click away; phones find them
                 in the menu. */}
             <span className="contents max-sm:hidden">
-              <GitHubLink />
+              <GitHubLink onOpen={onOpenGitHub} />
               <HintButton
                 label="Keyboard shortcuts"
                 icon={<Icon icon={KeyboardIcon} className="size-4" />}
@@ -357,6 +369,7 @@ export function ShellHeader({
                     <Menu.Separator />
                     <Menu.Item
                       render={<a href={REPO_URL} target="_blank" rel="noopener noreferrer" />}
+                      onClick={() => onOpenGitHub?.()}
                     >
                       <Menu.ItemContent icon={<Icon icon={GithubIcon} className="size-4" />}>
                         GitHub
@@ -370,7 +383,7 @@ export function ShellHeader({
         </>
       ) : (
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <GitHubLink className={PHONE_TAP} />
+          <GitHubLink className={PHONE_TAP} onOpen={onOpenGitHub} />
           <HintButton
             label="Keyboard shortcuts"
             icon={<Icon icon={KeyboardIcon} className="size-4" />}

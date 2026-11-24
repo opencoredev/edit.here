@@ -41,6 +41,8 @@ type DropzoneHomeProps = {
   onDeleteRecent: (id: string) => void;
   onClearRecents: () => void;
   onDismissError: () => void;
+  /** Leave room at the bottom for the star prompt, which floats over the end of the page. */
+  reserveBottom: boolean;
 };
 
 const FORMATS = ["PNG", "JPG", "WebP", "MP4", "WebM"] as const;
@@ -72,6 +74,7 @@ export function DropzoneHome({
   onDeleteRecent,
   onClearRecents,
   onDismissError,
+  reserveBottom,
 }: DropzoneHomeProps) {
   // The whole plate opens the picker; the button inside stays the keyboard path.
   const onPlateClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -81,7 +84,12 @@ export function DropzoneHome({
   };
 
   return (
-    <div className="home-mat relative flex flex-1 flex-col items-center px-4 pt-6 pb-8 sm:pt-6 sm:pb-12">
+    <div
+      className={[
+        "home-mat relative flex flex-1 flex-col items-center px-4 pt-6 sm:pt-6",
+        reserveBottom ? "pb-20" : "pb-8 sm:pb-12",
+      ].join(" ")}
+    >
       {/* Auto margins center the column but give way to scrolling once it outgrows the window. */}
       <section
         aria-label="Open a file"
