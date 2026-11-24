@@ -167,8 +167,6 @@ export function App() {
   // --- star prompt ------------------------------------------------------------------------
   // recordVisit counts a session once, so StrictMode running this initializer twice is safe.
   const [starEligible, setStarEligible] = useState(recordVisit);
-  // Home keeps room for the prompt for the whole page visit, so dismissing it doesn't shift Home.
-  const [starReserve] = useState(starEligible);
 
   const dismissStar = useCallback(() => {
     setStarEligible(false);
@@ -612,7 +610,7 @@ export function App() {
             onDismiss={dismissStar}
           />
 
-          <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <main className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
             {meta !== null && sessionFile !== undefined ? (
               <div className="flex min-h-0 flex-1 flex-col">
                 <EditorErrorBoundary key={meta.id} onClose={closeFile}>
@@ -649,7 +647,6 @@ export function App() {
                 onDeleteRecent={deleteRecent}
                 onClearRecents={clearRecents}
                 onDismissError={() => send({ type: "error.dismiss" })}
-                reserveBottom={starReserve}
               />
             )}
           </main>

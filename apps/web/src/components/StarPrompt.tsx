@@ -9,9 +9,10 @@ import { Icon } from "./Icon";
 const SHOW_DELAY_MS = 800;
 
 /**
- * Where the pill sits, clear of every toolbar, options tray, canvas, zoom pill and timeline at
- * every viewport width:
- * - Home: floats bottom right (full-width bottom on phones).
+ * Where the pill sits, clear of every toolbar, options tray, canvas, zoom pill, timeline, and
+ * home card at every viewport width:
+ * - Home (all widths): sits in normal flex flow right between the header and `<main>`, so it
+ *   can never cover recent project cards or sample pills regardless of width or scroll position.
  * - Editors at >= 1280px (`xl:`): floats top right under the header, 67px+ clear of the centered
  *   toolbar and above the options tray and canvas top margin.
  * - Editors below 1280px (`max-xl:`, e.g. 1024px, 768px, 390px): sits in normal flex flow right
@@ -19,7 +20,7 @@ const SHOW_DELAY_MS = 800;
  *   toolbar button or canvas pixel.
  */
 const WRAPPER_CLASS: Record<MediaKind | "home", string> = {
-  home: "fixed right-4 bottom-4 z-30 max-sm:inset-x-3 max-sm:bottom-3",
+  home: "z-30 flex shrink-0 justify-center bg-canvas px-2.5 pb-1.5",
   image:
     "z-30 xl:fixed xl:top-14 xl:right-3 max-xl:flex max-xl:shrink-0 max-xl:justify-center max-xl:bg-canvas max-xl:px-2.5 max-xl:pb-1.5",
   video:
@@ -52,18 +53,17 @@ export function StarPrompt({
   }, [active]);
 
   const placement = kind ?? "home";
-  const fromTop = kind !== null;
 
   return (
     <AnimatePresence>
       {active && settled ? (
         <motion.div
           key={placement}
-          initial={reduced ? { opacity: 0 } : { opacity: 0, y: fromTop ? -6 : 6, scale: 0.98 }}
+          initial={reduced ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={reduced ? { opacity: 0 } : { opacity: 0, y: fromTop ? -4 : 4, scale: 0.98 }}
+          exit={reduced ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.98 }}
           transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-          style={{ transformOrigin: fromTop ? "top center" : "bottom center" }}
+          style={{ transformOrigin: "top center" }}
           className={WRAPPER_CLASS[placement]}
         >
           <div className="alloy-panel flex items-center gap-2.5 py-1.5 pr-1.5 pl-3 text-sm shadow-lg max-sm:w-full">
