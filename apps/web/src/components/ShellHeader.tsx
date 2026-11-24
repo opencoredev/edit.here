@@ -74,7 +74,10 @@ function GitHubLink({ className }: { className?: string }) {
                 target="_blank"
                 rel="noopener noreferrer"
                 onKeyDown={(event) => {
-                  if (event.key === " ") return;
+                  if (event.key === " ") {
+                    event.preventDefault();
+                    return;
+                  }
                   onKeyDown?.(event);
                 }}
                 onKeyUp={(event) => {
