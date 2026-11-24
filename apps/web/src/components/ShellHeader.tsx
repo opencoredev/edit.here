@@ -67,8 +67,21 @@ function GitHubLink({ className }: { className?: string }) {
           <Button
             variant="ghost"
             nativeButton={false}
-            render={({ role: _role, ...buttonProps }) => (
-              <a {...buttonProps} href={REPO_URL} target="_blank" rel="noopener noreferrer" />
+            render={({ role: _role, onKeyDown, onKeyUp, ...buttonProps }) => (
+              <a
+                {...buttonProps}
+                href={REPO_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                onKeyDown={(event) => {
+                  if (event.key === " ") return;
+                  onKeyDown?.(event);
+                }}
+                onKeyUp={(event) => {
+                  if (event.key === " ") return;
+                  onKeyUp?.(event);
+                }}
+              />
             )}
             aria-label="View on GitHub"
             style={{ paddingInline: "var(--space-xs)" }}
