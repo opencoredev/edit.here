@@ -58,7 +58,7 @@ export function StarPrompt({
     <AnimatePresence>
       {active && settled ? (
         <motion.div
-          key={placement}
+          key="star-prompt"
           initial={reduced ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={reduced ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.98 }}
