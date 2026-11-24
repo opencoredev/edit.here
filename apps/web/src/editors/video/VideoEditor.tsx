@@ -133,6 +133,7 @@ import {
   usePlayheadSelector,
   type PlayheadStore,
 } from "./playhead";
+import { writeFrameToClipboard } from "./copy-frame";
 import { attachPreviewAudio, releasePreviewAudio, setPreviewGain } from "./preview-audio";
 import { probeVideo, type ProbeResult, type VideoProbe } from "./probe";
 import { Timeline, type ScrubPhase, type TrimBounds, type TrimEdge } from "./Timeline";
@@ -142,7 +143,7 @@ type ProbeState = { readonly kind: "loading" } | ProbeResult;
 
 /** Loads the file with mediabunny, then mounts the workspace or explains why it can't. */
 export function VideoEditor(props: EditorCommonProps) {
-  const { file, onStatus, onRegisterActions } = props;
+  const { file, onStatus, onRegisterActions, onMediaError } = props;
   const [probe, setProbe] = useState<ProbeState>({ kind: "loading" });
 
   useEffect(() => {
@@ -167,6 +168,10 @@ export function VideoEditor(props: EditorCommonProps) {
     if (probe.kind === "loading") onRegisterActions({ busy: true });
     else if (probe.kind === "unsupported") onRegisterActions({});
   }, [probe.kind, onRegisterActions]);
+
+  useEffect(() => {
+    if (probe.kind === "unsupported") onMediaError?.();
+  }, [probe.kind, onMediaError]);
 
   switch (probe.kind) {
     case "loading":
@@ -247,10 +252,6 @@ const SEGMENT_ITEM_CLASS = "px-2.5 max-sm:min-h-9";
 
 function comboFor(action: KeybindAction): string {
   return KEYBIND_CATALOG[action].keys[0];
-}
-
-function messageOf(cause: unknown, fallback: string): string {
-  return cause instanceof Error && cause.message !== "" ? cause.message : fallback;
 }
 
 /** Fits a box of `aspect` (width / height) inside the element's content box. */
@@ -698,7 +699,8 @@ function VideoWorkspace({
   );
 
   // --- copy and export --------------------------------------------------------------------------
-  const copyFrame = useCallback(() => {
+  /** Resolves once the frame is on the clipboard; rejects (after its toast) when it isn't. */
+  const copyFrame = useCallback((): Promise<void> | undefined => {
     const video = videoRef.current;
     if (video === null || video.videoWidth === 0) {
       onStatus("The video isn't ready to copy yet.", "error");
@@ -740,11 +742,12 @@ function VideoWorkspace({
         "image/png",
       );
     });
-    navigator.clipboard.write([new ClipboardItem({ "image/png": png })]).then(
-      () => onStatus("Frame copied as PNG.", "success"),
-      (cause: unknown) =>
-        onStatus(`Couldn't copy the frame: ${messageOf(cause, "clipboard denied")}`, "error"),
-    );
+    return writeFrameToClipboard({
+      png,
+      clipboard: navigator.clipboard,
+      toItem: (data) => new ClipboardItem({ "image/png": data }),
+      onStatus,
+    });
   }, [onStatus]);
 
   const exportFile = useCallback(async () => {

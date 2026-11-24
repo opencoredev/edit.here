@@ -81,6 +81,8 @@ export type EditorCommonProps = {
    * change, and once more when they close with a change still pending.
    */
   onPersistState?: (snapshot: PersistSnapshot) => void;
+  /** The file could not be loaded or decoded; the editor shows its own message. */
+  onMediaError?: () => void;
 };
 
 export type PersistSnapshot = {

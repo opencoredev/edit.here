@@ -84,11 +84,15 @@ import {
 
 export function ImageEditor(props: EditorCommonProps) {
   const source = useImageSource(props.file);
-  const { onRegisterActions } = props;
+  const { onRegisterActions, onMediaError } = props;
 
   useEffect(() => {
     if (source.kind !== "ready") onRegisterActions({ busy: source.kind === "loading" });
   }, [source.kind, onRegisterActions]);
+
+  useEffect(() => {
+    if (source.kind === "error") onMediaError?.();
+  }, [source.kind, onMediaError]);
 
   switch (source.kind) {
     case "loading":

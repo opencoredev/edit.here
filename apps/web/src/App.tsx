@@ -25,6 +25,12 @@ import { ShellHeader } from "./components/ShellHeader";
 import { StarPrompt } from "./components/StarPrompt";
 import { ToastBar } from "./components/ToastBar";
 import type { EditorCommonProps, EditorToolbarActions, PersistSnapshot } from "./editors/types";
+import {
+  reportError,
+  trackEvent,
+  type OpenSource,
+  type StarPromptPlacement,
+} from "./lib/analytics";
 import { detectPlatform, isEditableTarget } from "./lib/platform";
 import { useEditorActor } from "./lib/use-editor-actor";
 import { randomId } from "./lib/new-id";
@@ -34,6 +40,7 @@ import {
   recordVisit,
   STAR_PROMPT_KEY,
 } from "./lib/star-prompt";
+import { PendingOpens, readyOpen, resolveExportFormat, settleCopy } from "./lib/telemetry";
 import { sourceThumbnail } from "./lib/thumbnail";
 import {
   clearActivePointer,
@@ -121,7 +128,7 @@ export function App() {
   const [colorMode, setColorMode] = useState<ColorMode>(readStoredColorMode);
   const [platform] = useState(detectPlatform);
   const { snapshot, send } = useEditorActor();
-  const { session, toast, keybindsOpen, error } = snapshot.context;
+  const { session, pending: detectingFile, toast, keybindsOpen, error } = snapshot.context;
   const exporting = snapshot.matches("exporting");
   const detecting = snapshot.matches("detecting");
 
@@ -173,6 +180,31 @@ export function App() {
     dismissStarPrompt();
   }, []);
 
+  // The pill keeps its buttons through the exit animation; count one answer per page.
+  const starAnswered = useRef(false);
+  const answerStar = useCallback(
+    (event: "star_prompt_clicked" | "star_prompt_dismissed", placement: StarPromptPlacement) => {
+      if (!starAnswered.current) {
+        starAnswered.current = true;
+        trackEvent(event, { placement });
+      }
+      dismissStar();
+    },
+    [dismissStar],
+  );
+  const onStarShown = useCallback(
+    (placement: StarPromptPlacement) => trackEvent("star_prompt_shown", { placement }),
+    [],
+  );
+  const onStarClicked = useCallback(
+    (placement: StarPromptPlacement) => answerStar("star_prompt_clicked", placement),
+    [answerStar],
+  );
+  const onStarDismissed = useCallback(
+    (placement: StarPromptPlacement) => answerStar("star_prompt_dismissed", placement),
+    [answerStar],
+  );
+
   // Starred, dismissed, or cleared in another tab: hide it here too.
   useEffect(() => {
     if (!starEligible) return;
@@ -195,8 +227,12 @@ export function App() {
     sessionIdRef.current = session?.id;
   });
 
+  /** How each pending open started, by session id; read once its editor has loaded the file. */
+  const pendingOpens = useRef(new PendingOpens());
+
   const openFile = useCallback(
-    (file: File, id: string = randomId()): string => {
+    (file: File, id: string = randomId(), source: OpenSource = "file"): string => {
+      pendingOpens.current.begin({ id, source, openId: sessionIdRef.current });
       // Keep the open file (it stays mounted while the new one is detected) and the new one.
       setFiles((previous) => {
         const next = new Map<string, File>();
@@ -229,7 +265,7 @@ export function App() {
     async (kind: MediaKind) => {
       setLoadingSample(kind);
       try {
-        openFile(await SAMPLE_FACTORIES[kind]());
+        openFile(await SAMPLE_FACTORIES[kind](), randomId(), "sample");
       } catch (cause) {
         send({
           type: "toast.show",
@@ -259,12 +295,12 @@ export function App() {
   // --- saved projects -------------------------------------------------------------------------
   /** Reopens a saved project with its edits and extra files. */
   const reopen = useCallback(
-    (record: RestoredWorkspace) => {
+    (record: RestoredWorkspace, source: "recent" | "restore") => {
       pendingAppend.current = null;
       // The store's own File objects: saving them again skips their bytes (workspace-store).
       const extraFiles = new Map(record.extraFiles.map((extra) => [extra.id, extra.blob]));
       setRestore({ sessionId: record.id, state: record.state, extraFiles });
-      openFile(record.file, record.id);
+      openFile(record.file, record.id, source);
       // Projects saved before thumbnails existed get one now.
       if (record.thumbnail === null) {
         saveWorkspaceThumbnail(record.id, sourceThumbnail(record.file, record.meta.kind));
@@ -282,7 +318,7 @@ export function App() {
         return;
       }
       setBoot("restoring");
-      reopen(record);
+      reopen(record, "restore");
     });
     return () => {
       cancelled = true;
@@ -298,7 +334,7 @@ export function App() {
         return;
       }
       void setActivePointer(id);
-      reopen(record);
+      reopen(record, "recent");
     },
     [reopen, send],
   );
@@ -325,6 +361,20 @@ export function App() {
     }
   }, [boot, session, error]);
 
+  // One editor_opened per open, once the editor has decoded the file: a file that fails
+  // detection or decoding (a corrupt PNG) never counts.
+  useEffect(() => {
+    const opened = readyOpen({ session, registered, pending: pendingOpens.current });
+    if (opened !== null) trackEvent("editor_opened", opened);
+  }, [registered, session]);
+
+  // Opens that are neither on screen nor being detected failed or were replaced: forget them.
+  const openSessionId = session?.id;
+  const pendingId = detectingFile?.id;
+  useEffect(() => {
+    pendingOpens.current.retain([openSessionId, pendingId]);
+  }, [openSessionId, pendingId]);
+
   // --- editor callbacks -------------------------------------------------------------------
   const onStatus = useCallback(
     (message: string, tone: ToastTone = "info") => send({ type: "toast.show", message, tone }),
@@ -332,6 +382,11 @@ export function App() {
   );
 
   const sessionId = session?.id;
+  // A file that fails to decode is not an open, even though its editor stays mounted.
+  const onMediaError = useCallback(() => {
+    if (sessionId !== undefined) pendingOpens.current.fail(sessionId);
+  }, [sessionId]);
+
   const onRegisterActions = useCallback(
     (next: EditorToolbarActions) => {
       if (sessionId !== undefined) setRegistered({ sessionId, actions: next });
@@ -405,8 +460,16 @@ export function App() {
   const runExport = useCallback(
     async (format?: string) => {
       const exportFile = actions.exportFile;
-      if (exportFile === undefined || actions.busy === true || !snapshot.matches("editing")) return;
-      const name = session?.name ?? "file";
+      if (
+        exportFile === undefined ||
+        actions.busy === true ||
+        session === null ||
+        !snapshot.matches("editing")
+      )
+        return;
+      const { name, kind } = session;
+      // The format the export really uses ("png", "mp4"), never anything from the file.
+      const reportedFormat = resolveExportFormat(format, actions.exportFormats);
       const formatLabel =
         format === undefined
           ? undefined
@@ -416,25 +479,32 @@ export function App() {
       try {
         await exportFile(format);
         send({ type: "export.done", message: `Exported ${name}` });
+        if (reportedFormat !== undefined) {
+          trackEvent("export_completed", { kind, format: reportedFormat });
+        }
       } catch (cause) {
         send({ type: "export.failed", message: errorMessage(cause, "Export failed.") });
+        if (reportedFormat !== undefined)
+          trackEvent("export_failed", { kind, format: reportedFormat });
+        reportError(cause, { source: "export" });
       }
     },
-    [actions, send, session?.name, snapshot],
+    [actions, send, session, snapshot],
   );
 
   const runCopy = useCallback(() => {
     const copy = actions.copy;
     if (copy === undefined || actions.busy === true) return;
-    const result = copy();
-    if (result instanceof Promise) {
-      result.then(
-        () => setCopied(true),
-        // The editor reports its own copy errors.
-        () => setCopied(false),
-      );
-    }
-  }, [actions]);
+    const kind = session?.kind;
+    settleCopy(copy(), {
+      onCopied: () => {
+        setCopied(true);
+        if (kind !== undefined) trackEvent("image_copied", { kind });
+      },
+      // The editor reports its own copy errors.
+      onFailed: () => setCopied(false),
+    });
+  }, [actions, session?.kind]);
 
   useEffect(() => {
     if (!copied) return;
@@ -607,7 +677,9 @@ export function App() {
           <StarPrompt
             active={starEligible && boot === "ready"}
             kind={meta?.kind ?? null}
-            onDismiss={dismissStar}
+            onShown={onStarShown}
+            onStar={onStarClicked}
+            onDismiss={onStarDismissed}
           />
 
           <main className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
@@ -623,6 +695,7 @@ export function App() {
                       onReplaceFile={openFile}
                       colorMode={colorMode}
                       onPersistState={onPersistState}
+                      onMediaError={onMediaError}
                       {...(restoring
                         ? { initialState: restore.state, initialExtraFiles: restore.extraFiles }
                         : {})}

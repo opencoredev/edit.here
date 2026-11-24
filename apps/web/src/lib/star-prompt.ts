@@ -106,3 +106,21 @@ export function dismissStarPrompt(stores?: StarPromptStores): void {
 export function isDismissedValue(raw: string | null): boolean {
   return parseVisitState(raw).dismissed;
 }
+
+/**
+ * Says yes once per appearance of the prompt: the first `update(true)` after it was hidden. Calling
+ * it again while still visible (a re-render, StrictMode, a placement change) says no.
+ */
+export class AppearanceLatch {
+  #reported = false;
+
+  update(visible: boolean): boolean {
+    if (!visible) {
+      this.#reported = false;
+      return false;
+    }
+    if (this.#reported) return false;
+    this.#reported = true;
+    return true;
+  }
+}

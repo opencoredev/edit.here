@@ -1,6 +1,7 @@
 import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { Icon } from "./Icon";
 import { Component, type ReactNode } from "react";
+import { reportError } from "../lib/analytics";
 import { Button } from "./graphical/index";
 
 type Props = {
@@ -19,6 +20,10 @@ export class EditorErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(): State {
     return { failed: true };
+  }
+
+  override componentDidCatch(error: Error) {
+    reportError(error, { source: "editor" });
   }
 
   override render() {

@@ -1,7 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { initAnalytics } from "./lib/analytics";
 import "./styles/app.css";
+
+// Before the first render, so the shell's first events have somewhere to go.
+initAnalytics();
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("Missing #root element");

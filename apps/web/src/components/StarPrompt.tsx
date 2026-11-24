@@ -2,7 +2,9 @@ import type { MediaKind } from "@edit-here/core";
 import { Cancel01Icon, StarIcon } from "@hugeicons/core-free-icons";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import type { StarPromptPlacement } from "../lib/analytics";
 import { REPO_URL } from "../lib/repo";
+import { AppearanceLatch } from "../lib/star-prompt";
 import { Icon } from "./Icon";
 
 /** A calm pause after the page settles, so the prompt never flashes in during startup. */
@@ -19,7 +21,7 @@ const SHOW_DELAY_MS = 800;
  *   between the header and `<main>`, pushing the editor stage down so it can never overlap any
  *   toolbar button or canvas pixel.
  */
-const WRAPPER_CLASS: Record<MediaKind | "home", string> = {
+const WRAPPER_CLASS: Record<StarPromptPlacement, string> = {
   home: "z-30 flex shrink-0 justify-center bg-canvas px-2.5 pb-1.5",
   image:
     "z-30 xl:fixed xl:top-14 xl:right-3 max-xl:flex max-xl:shrink-0 max-xl:justify-center max-xl:bg-canvas max-xl:px-2.5 max-xl:pb-1.5",
@@ -34,13 +36,20 @@ const WRAPPER_CLASS: Record<MediaKind | "home", string> = {
 export function StarPrompt({
   active,
   kind,
+  onShown,
+  onStar,
   onDismiss,
 }: {
   /** Eligible and the page is ready; the pill appears after a short pause. */
   active: boolean;
   /** The open editor, or `null` on Home. */
   kind: MediaKind | null;
-  onDismiss: () => void;
+  /** The pill appeared (once per appearance). */
+  onShown: (placement: StarPromptPlacement) => void;
+  /** The GitHub link was opened (click, Enter or middle click). */
+  onStar: (placement: StarPromptPlacement) => void;
+  /** The dismiss button was pressed. */
+  onDismiss: (placement: StarPromptPlacement) => void;
 }) {
   const reduced = useReducedMotion() === true;
   const [settled, setSettled] = useState(false);
@@ -52,11 +61,24 @@ export function StarPrompt({
     return () => clearTimeout(timer);
   }, [active]);
 
-  const placement = kind ?? "home";
+  const placement: StarPromptPlacement = kind ?? "home";
+  const visible = active && settled;
+
+  // Report each appearance once, with the placement it appeared in. Moving between Home and an
+  // editor while it shows is not a new appearance; the answer carries where it was given. The
+  // latch survives StrictMode re-running the effect.
+  const [shownLatch] = useState(() => new AppearanceLatch());
+  const latestShown = useRef({ onShown, placement });
+  useEffect(() => {
+    latestShown.current = { onShown, placement };
+  });
+  useEffect(() => {
+    if (shownLatch.update(visible)) latestShown.current.onShown(latestShown.current.placement);
+  }, [visible, shownLatch]);
 
   return (
     <AnimatePresence>
-      {active && settled ? (
+      {visible ? (
         <motion.div
           key="star-prompt"
           initial={reduced ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
@@ -75,10 +97,10 @@ export function StarPrompt({
               href={REPO_URL}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={onDismiss}
+              onClick={() => onStar(placement)}
               onAuxClick={(event) => {
                 // A middle click opens the repo in a background tab: that answers it too.
-                if (event.button === 1) onDismiss();
+                if (event.button === 1) onStar(placement);
               }}
               onKeyDown={(event) => {
                 // Space is not a link key. Keep it from scrolling or reaching the editors, where
@@ -91,7 +113,7 @@ export function StarPrompt({
             </a>
             <button
               type="button"
-              onClick={onDismiss}
+              onClick={() => onDismiss(placement)}
               onKeyDown={(event) => {
                 // Claim Space before the video editor's global play/pause shortcut sees it, then
                 // dismiss on keyup like a native button.
@@ -104,7 +126,7 @@ export function StarPrompt({
                 if (event.key === " " && dismissSpaceHeld.current) {
                   dismissSpaceHeld.current = false;
                   event.preventDefault();
-                  onDismiss();
+                  onDismiss(placement);
                 }
               }}
               onBlur={() => {
