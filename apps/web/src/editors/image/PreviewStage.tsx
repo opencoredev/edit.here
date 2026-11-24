@@ -572,8 +572,9 @@ export function PreviewStage({
 
 /**
  * Zoom readout and controls. Desktop: always in the bottom-right corner. Phones: only while
- * zoomed or panned, so the fitted image stays uncluttered above the dock. Memoized: the stage
- * re-renders on every move of a drag on the canvas, which never changes the zoom.
+ * zoomed or panned, so the fitted image stays uncluttered above the dock. Memoized, and so are
+ * its buttons that never show the zoom: the stage re-renders on every move of a drag, and a
+ * frame slider changes the readout on each one.
  */
 const ZoomPill = memo(function ZoomPill({
   percent: value,
@@ -595,13 +596,7 @@ const ZoomPill = memo(function ZoomPill({
         atFit ? "max-sm:hidden" : "",
       ].join(" ")}
     >
-      <HintButton
-        label="Zoom out"
-        icon={<Icon icon={MinusSignIcon} className="size-4" />}
-        onClick={controller.zoomOut}
-        combo="-"
-        platform={platform}
-      />
+      <ZoomStepButton direction="out" platform={platform} controller={controller} />
       <HintButton
         label="Fit image to screen"
         icon={<span className="timecode min-w-[4ch] text-center text-xs text-ink">{value}%</span>}
@@ -609,22 +604,58 @@ const ZoomPill = memo(function ZoomPill({
         combo="Mod+0"
         platform={platform}
       />
-      <HintButton
-        label="Zoom in"
-        icon={<Icon icon={PlusSignIcon} className="size-4" />}
-        onClick={controller.zoomIn}
-        combo="="
-        platform={platform}
-      />
-      <HintButton
-        label="Fit"
-        showLabel
-        icon={null}
-        onClick={controller.fit}
-        combo="Mod+0"
-        platform={platform}
-        disabled={atFit}
-      />
+      <ZoomStepButton direction="in" platform={platform} controller={controller} />
+      <FitButton atFit={atFit} platform={platform} controller={controller} />
     </div>
+  );
+});
+
+const ZoomStepButton = memo(function ZoomStepButton({
+  direction,
+  platform,
+  controller,
+}: {
+  direction: "in" | "out";
+  platform: Platform;
+  controller: StageViewportController;
+}) {
+  return direction === "in" ? (
+    <HintButton
+      label="Zoom in"
+      icon={<Icon icon={PlusSignIcon} className="size-4" />}
+      onClick={controller.zoomIn}
+      combo="="
+      platform={platform}
+    />
+  ) : (
+    <HintButton
+      label="Zoom out"
+      icon={<Icon icon={MinusSignIcon} className="size-4" />}
+      onClick={controller.zoomOut}
+      combo="-"
+      platform={platform}
+    />
+  );
+});
+
+const FitButton = memo(function FitButton({
+  atFit,
+  platform,
+  controller,
+}: {
+  atFit: boolean;
+  platform: Platform;
+  controller: StageViewportController;
+}) {
+  return (
+    <HintButton
+      label="Fit"
+      showLabel
+      icon={null}
+      onClick={controller.fit}
+      combo="Mod+0"
+      platform={platform}
+      disabled={atFit}
+    />
   );
 });

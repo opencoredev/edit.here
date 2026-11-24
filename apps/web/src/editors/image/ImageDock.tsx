@@ -46,7 +46,7 @@ import {
   TransparencyIcon,
   ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons";
-import { useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { Input, Popover } from "../../components/graphical/index";
 import { Icon, type IconSvgElement } from "../../components/Icon";
 import {
@@ -207,20 +207,38 @@ export type ImageDockProps = {
 
 export type CropTargetOption = { readonly value: string; readonly label: string };
 
-/** The image tool bar: drawing tools, image tools, then orientation. */
-export function ImageToolBar(props: ImageDockProps) {
-  const { state, platform } = props;
+export type ImageToolBarProps = Pick<
+  ImageDockProps,
+  "platform" | "onTool" | "onAddImage" | "onRotate" | "onFlip" | "onReset"
+> & {
+  /** The active tool. */
+  tool: ImageTool;
+};
+
+/**
+ * The image tool bar: drawing tools, image tools, then orientation. Memoized on the active tool:
+ * a slider drag re-renders the editor on every move, and these buttons never change with it.
+ */
+export const ImageToolBar = memo(function ImageToolBar({
+  tool: active,
+  platform,
+  onTool,
+  onAddImage,
+  onRotate,
+  onFlip,
+  onReset,
+}: ImageToolBarProps) {
   const toolButton = ({ tool, label, short, action, glyph }: ToolButton) => (
     <HintButton
       key={tool}
       label={label}
       mobileLabel={short}
       icon={<Icon icon={glyph} className="size-4" />}
-      onClick={() => props.onTool(tool)}
+      onClick={() => onTool(tool)}
       {...numberedHint(action)}
       platform={platform}
-      pressed={state.tool === tool}
-      variant={state.tool === tool ? "secondary" : "ghost"}
+      pressed={active === tool}
+      variant={active === tool ? "secondary" : "ghost"}
     />
   );
   return (
@@ -232,7 +250,7 @@ export function ImageToolBar(props: ImageDockProps) {
         label="Add image to canvas"
         mobileLabel="Add"
         icon={<Icon icon={ImageAdd01Icon} className="size-4" />}
-        onClick={props.onAddImage}
+        onClick={onAddImage}
         platform={platform}
       />
       <DockDivider />
@@ -240,7 +258,7 @@ export function ImageToolBar(props: ImageDockProps) {
         label="Rotate 90°"
         mobileLabel="Rotate"
         icon={<Icon icon={RotateClockwiseIcon} className="size-4" />}
-        onClick={props.onRotate}
+        onClick={onRotate}
         combo="Shift+R"
         platform={platform}
       />
@@ -248,7 +266,7 @@ export function ImageToolBar(props: ImageDockProps) {
         label="Flip horizontally"
         mobileLabel="Flip"
         icon={<Icon icon={FlipHorizontalIcon} className="size-4" />}
-        onClick={props.onFlip}
+        onClick={onFlip}
         combo="f"
         platform={platform}
       />
@@ -256,13 +274,13 @@ export function ImageToolBar(props: ImageDockProps) {
         label="Reset crop, rotation and flip"
         mobileLabel="Reset"
         icon={<Icon icon={RotateLeft01Icon} className="size-4" />}
-        onClick={props.onReset}
+        onClick={onReset}
         combo="0"
         platform={platform}
       />
     </DockBar>
   );
-}
+});
 
 /** Label for the options row of the active tool. */
 export function imageOptionsLabel(tool: ImageTool): string {
@@ -695,44 +713,41 @@ function ShadowGlyph() {
  * Frame options in one line: the backgrounds (None first, which turns the frame off), padding
  * and radius, then Shadow while a frame is on, or Transparent while it is off (a frame always
  * paints its own background, so transparency only applies without one).
+ *
+ * The parts are memoized on what each shows: dragging Padding re-renders the editor on every
+ * move, and only the Padding slider changes with it.
  */
 function FrameOptions({ state, onFrame, onTransparent, platform }: ImageDockProps) {
   const narrow = useIsNarrow();
   const { frame } = state;
-  const live = (patch: Partial<FrameConfig>) => onFrame({ ...patch, enabled: true }, "live");
-  const commit = (patch: Partial<FrameConfig>) => onFrame({ ...patch, enabled: true }, "commit");
+  const onPadding = useCallback(
+    (padding: number) => onFrame({ padding, enabled: true }, "live"),
+    [onFrame],
+  );
+  const onPaddingCommit = useCallback(
+    (padding: number) => onFrame({ padding, enabled: true }, "commit"),
+    [onFrame],
+  );
+  const onRadius = useCallback(
+    (radius: number) => onFrame({ radius, enabled: true }, "live"),
+    [onFrame],
+  );
+  const onRadiusCommit = useCallback(
+    (radius: number) => onFrame({ radius, enabled: true }, "commit"),
+    [onFrame],
+  );
   const swatches = (
-    <div className="flex shrink-0 items-center gap-1.5" role="radiogroup" aria-label="Background">
-      <button
-        type="button"
-        role="radio"
-        aria-checked={!frame.enabled}
-        aria-label="No frame"
-        title="No frame"
-        onClick={() => onFrame({ enabled: false }, "commit")}
-        className={`${SWATCH_CLASS} swatch-none`}
-      />
-      {SWATCHES.map((preset) => (
-        <button
-          key={preset}
-          type="button"
-          role="radio"
-          aria-checked={frame.enabled && frame.preset === preset}
-          aria-label={BACKGROUND_PRESETS[preset].label}
-          title={BACKGROUND_PRESETS[preset].label}
-          onClick={() => commit({ preset })}
-          className={SWATCH_CLASS}
-          style={{ background: BACKGROUND_PRESETS[preset].css }}
-        />
-      ))}
-      <CustomBackground
-        frame={frame}
-        narrow={narrow}
-        platform={platform}
-        live={live}
-        commit={commit}
-      />
-    </div>
+    <FrameBackgrounds
+      enabled={frame.enabled}
+      preset={frame.preset}
+      customMode={frame.customMode}
+      customColor={frame.customColor}
+      customColorEnd={frame.customColorEnd}
+      customAngle={frame.customAngle}
+      narrow={narrow}
+      platform={platform}
+      onFrame={onFrame}
+    />
   );
   const padding = (
     <InlineSlider
@@ -742,8 +757,8 @@ function FrameOptions({ state, onFrame, onTransparent, platform }: ImageDockProp
       max={512}
       compact
       className="w-36 max-sm:w-auto"
-      onChange={(next) => live({ padding: next })}
-      onCommit={(next) => commit({ padding: next })}
+      onChange={onPadding}
+      onCommit={onPaddingCommit}
     />
   );
   const radius = (
@@ -754,30 +769,18 @@ function FrameOptions({ state, onFrame, onTransparent, platform }: ImageDockProp
       max={128}
       compact
       className="w-32 max-sm:w-auto"
-      onChange={(next) => live({ radius: next })}
-      onCommit={(next) => commit({ radius: next })}
+      onChange={onRadius}
+      onCommit={onRadiusCommit}
     />
   );
-  const toggle = frame.enabled ? (
-    <HintButton
-      label="Shadow"
-      showLabel
-      icon={<ShadowGlyph />}
-      pressed={frame.shadow}
-      variant={frame.shadow ? "secondary" : "ghost"}
-      onClick={() => commit({ shadow: !frame.shadow })}
+  const toggle = (
+    <FrameToggle
+      enabled={frame.enabled}
+      shadow={frame.shadow}
+      transparent={state.transparent}
       platform={platform}
-    />
-  ) : (
-    <HintButton
-      label="Transparent"
-      showLabel
-      icon={<Icon icon={TransparencyIcon} className="size-4" />}
-      pressed={state.transparent}
-      variant={state.transparent ? "secondary" : "ghost"}
-      onClick={() => onTransparent(!state.transparent)}
-      combo="t"
-      platform={platform}
+      onFrame={onFrame}
+      onTransparent={onTransparent}
     />
   );
   const jpegNote =
@@ -820,6 +823,95 @@ function FrameOptions({ state, onFrame, onTransparent, platform }: ImageDockProp
   );
 }
 
+type FrameChange = ImageDockProps["onFrame"];
+
+/** Shadow while a frame is on, Transparent while it is off. */
+const FrameToggle = memo(function FrameToggle({
+  enabled,
+  shadow,
+  transparent,
+  platform,
+  onFrame,
+  onTransparent,
+}: Pick<FrameConfig, "enabled" | "shadow"> & {
+  transparent: boolean;
+  platform: Platform;
+  onFrame: FrameChange;
+  onTransparent: (transparent: boolean) => void;
+}) {
+  return enabled ? (
+    <HintButton
+      label="Shadow"
+      showLabel
+      icon={<ShadowGlyph />}
+      pressed={shadow}
+      variant={shadow ? "secondary" : "ghost"}
+      onClick={() => onFrame({ shadow: !shadow, enabled: true }, "commit")}
+      platform={platform}
+    />
+  ) : (
+    <HintButton
+      label="Transparent"
+      showLabel
+      icon={<Icon icon={TransparencyIcon} className="size-4" />}
+      pressed={transparent}
+      variant={transparent ? "secondary" : "ghost"}
+      onClick={() => onTransparent(!transparent)}
+      combo="t"
+      platform={platform}
+    />
+  );
+});
+
+type BackgroundFields = Pick<
+  FrameConfig,
+  "enabled" | "preset" | "customMode" | "customColor" | "customColorEnd" | "customAngle"
+>;
+
+/** The background swatches: None, the presets, then Custom. */
+const FrameBackgrounds = memo(function FrameBackgrounds({
+  narrow,
+  platform,
+  onFrame,
+  ...frame
+}: BackgroundFields & { narrow: boolean; platform: Platform; onFrame: FrameChange }) {
+  const live = (patch: Partial<FrameConfig>) => onFrame({ ...patch, enabled: true }, "live");
+  const commit = (patch: Partial<FrameConfig>) => onFrame({ ...patch, enabled: true }, "commit");
+  return (
+    <div className="flex shrink-0 items-center gap-1.5" role="radiogroup" aria-label="Background">
+      <button
+        type="button"
+        role="radio"
+        aria-checked={!frame.enabled}
+        aria-label="No frame"
+        title="No frame"
+        onClick={() => onFrame({ enabled: false }, "commit")}
+        className={`${SWATCH_CLASS} swatch-none`}
+      />
+      {SWATCHES.map((preset) => (
+        <button
+          key={preset}
+          type="button"
+          role="radio"
+          aria-checked={frame.enabled && frame.preset === preset}
+          aria-label={BACKGROUND_PRESETS[preset].label}
+          title={BACKGROUND_PRESETS[preset].label}
+          onClick={() => commit({ preset })}
+          className={SWATCH_CLASS}
+          style={{ background: BACKGROUND_PRESETS[preset].css }}
+        />
+      ))}
+      <CustomBackground
+        frame={frame}
+        narrow={narrow}
+        platform={platform}
+        live={live}
+        commit={commit}
+      />
+    </div>
+  );
+});
+
 const SWATCH_CLASS =
   "size-[22px] shrink-0 rounded-sm shadow-[var(--border-shadow-s)] outline-offset-2 transition-transform duration-150 hover:scale-110 focus-visible:outline-2 focus-visible:outline-brand aria-checked:outline-2 aria-checked:outline-brand aria-expanded:outline-2 aria-expanded:outline-brand motion-reduce:transition-none max-sm:size-7";
 
@@ -836,7 +928,7 @@ function CustomBackground({
   live,
   commit,
 }: {
-  frame: FrameConfig;
+  frame: BackgroundFields;
   narrow: boolean;
   platform: Platform;
   live: FramePatch;
