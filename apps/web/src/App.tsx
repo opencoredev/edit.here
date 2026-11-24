@@ -606,6 +606,12 @@ export function App() {
             onOpenGitHub={dismissStar}
           />
 
+          <StarPrompt
+            active={starEligible && boot === "ready"}
+            kind={meta?.kind ?? null}
+            onDismiss={dismissStar}
+          />
+
           <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             {meta !== null && sessionFile !== undefined ? (
               <div className="flex min-h-0 flex-1 flex-col">
@@ -653,11 +659,6 @@ export function App() {
             activeKind={meta?.kind ?? null}
             platform={platform}
             onOpenChange={(open) => send({ type: open ? "keybinds.open" : "keybinds.close" })}
-          />
-          <StarPrompt
-            active={starEligible && boot === "ready"}
-            kind={meta?.kind ?? null}
-            onDismiss={dismissStar}
           />
           <ToastBar toast={toast} onDismiss={(id) => send({ type: "toast.dismiss", id })} />
           <DropOverlay
