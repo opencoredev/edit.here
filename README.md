@@ -1,17 +1,40 @@
 # edit.here
 
-An image and video editor that runs in your browser. Files are opened, edited and exported on your device and never uploaded. After the first visit it also works offline.
+Edit images and videos in your browser. Nothing is uploaded.
 
-Use it at [edit.here](https://edit.here/). Source: [github.com/opencoredev/edit.here](https://github.com/opencoredev/edit.here).
+Use it at [edit.here](https://edit.here/).
+
+<!-- Demo slot: add renders/demo.gif, then uncomment.
+![edit.here demo](renders/demo.gif)
+-->
 
 ## Features
 
 - **Images** (PNG, JPG, WebP, GIF, AVIF, BMP): crop, rotate and flip, draw (pen, highlighter, arrows, boxes, text), redact with blackout, blur or pixelate, add more pictures to the canvas, and frame the result with padding, rounded corners, a shadow and a background. Export as PNG, JPEG or WebP, or copy to the clipboard.
 - **Videos** (MP4, WebM, MOV, MKV, M4V): trim and split, delete segments, crop, rotate and flip, change speed and volume per clip, add fades in and out, and export.
-- **Local projects**: recent work is kept in the browser's IndexedDB, so a reload picks up where you left off.
-- **Keyboard first**: press `?` in the app for the full list of shortcuts.
+- **Works offline**: after the first visit the whole app is cached, so it opens without a connection.
+- **Picks up where you left off**: recent work is kept in your browser's IndexedDB.
 
-## Development
+## Keyboard shortcuts
+
+Press `?` in the app for the full list. The common ones (`Mod` is Cmd on macOS, Ctrl elsewhere):
+
+| Keys                    | Action                                                                             |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `Mod+Z` / `Mod+Shift+Z` | Undo / redo                                                                        |
+| `Mod+E`                 | Export                                                                             |
+| `Mod+C`                 | Copy the result to the clipboard                                                   |
+| `1`–`9`                 | Image tools: select, pen, highlighter, arrow, rectangle, text, redact, crop, frame |
+| `Space`                 | Play or pause a video                                                              |
+| `s` / `x`               | Split at the playhead / cut a segment                                              |
+| `i` / `o`               | Set the in and out points                                                          |
+| `j` `k` `l`             | Shuttle backward, pause, forward                                                   |
+
+## Privacy
+
+Files are opened, edited and exported on your device and never sent anywhere. There is no account. The production site counts anonymous page views and errors without cookies, never sends file names, file contents or anything you type, and skips analytics entirely when Global Privacy Control or Do Not Track is on. Self-hosted builds send nothing.
+
+## Run it yourself
 
 Requires Node 22 or newer and pnpm 10.
 
@@ -19,25 +42,13 @@ Requires Node 22 or newer and pnpm 10.
 git clone https://github.com/opencoredev/edit.here.git
 cd edit.here
 pnpm install
-pnpm dev      # Vite dev server on http://localhost:5173
+pnpm dev      # dev server on http://localhost:5173
 pnpm check    # typecheck and lint
 pnpm test     # unit tests
-pnpm build    # production build in apps/web/dist
+pnpm build    # static site in apps/web/dist
 ```
 
-## Layout
-
-| Path            | What it holds                                                                                                   |
-| --------------- | --------------------------------------------------------------------------------------------------------------- |
-| `packages/core` | Pure TypeScript domain code: file detection, document operations, layout math, keybinds, state machine. No DOM. |
-| `apps/web`      | The Vite + React app. Each editor (`src/editors/image`, `src/editors/video`) is its own lazy-loaded chunk.      |
-| `apps/infra`    | An optional Alchemy stack that serves `apps/web/dist` from a Cloudflare Worker.                                 |
-
-## Deploying
-
-The site is static. `vercel.json` at the repo root builds `@edit-here/web`, serves `apps/web/dist`, falls back to `index.html` for client routes, caches hashed assets and fonts for a year, and keeps `sw.js` uncached so new deploys reach returning visitors.
-
-Any other static host works too: build with `pnpm build` and serve `apps/web/dist`.
+The build is a static site: serve `apps/web/dist` from any static host. `vercel.json` holds the Vercel settings used for edit.here.
 
 ## License
 

@@ -4,7 +4,6 @@
   "installCommand": "pnpm install",
   "buildCommand": "pnpm --filter @edit-here/web build",
   "outputDirectory": "apps/web/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
   "headers": [
     {
       "source": "/assets/(.*)",
