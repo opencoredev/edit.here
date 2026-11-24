@@ -13,6 +13,7 @@ import {
   chooseVideoEncoder,
   computeAudioGainAt,
   findCopyStart,
+  firstSupported,
   isCopyExact,
   mapIntervalToRanges,
   softClipSample,
@@ -86,11 +87,16 @@ function outputSize(args: ExportArgs): { width: number; height: number } {
     : { width: args.width, height: args.height };
 }
 
+/**
+ * The codec `chooseVideoEncoder` would pick, as a set: candidates are asked in preference order
+ * and the first that works wins, so later ones (each a slow browser check) are never asked.
+ */
 async function encodableVideoCodecs(args: ExportArgs): Promise<ReadonlySet<ExportVideoCodec>> {
   const size = outputSize(args);
-  const candidates = videoEncodeCandidates(args.plan.format);
-  const supported = await Promise.all(candidates.map((codec) => canEncodeVideo(codec, size)));
-  return new Set(candidates.filter((_, index) => supported[index] === true));
+  const first = await firstSupported(videoEncodeCandidates(args.plan.format), (codec) =>
+    canEncodeVideo(codec, size),
+  );
+  return new Set(first === null ? [] : [first]);
 }
 
 async function encodableAudioCodecs(): Promise<ReadonlySet<ExportAudioCodec>> {

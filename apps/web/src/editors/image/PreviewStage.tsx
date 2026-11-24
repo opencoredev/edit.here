@@ -1,20 +1,29 @@
 import {
+  annotationListChange,
+  baseImageShift,
   DEFAULT_FRAME_CONFIG,
   dotGridSpacing,
+  imageLayoutsEqual,
   isFitViewport,
   resolveExportBackground,
   stageMaxZoom,
+  type AnnotationListChange,
   type ExportBackground,
+  type ImageAnnotation,
   type ImageDocumentState,
   type ImageLayout,
+  type PixelOffset,
   type PixelRect,
 } from "@edit-here/core";
 import { MinusSignIcon, PlusSignIcon } from "@hugeicons/core-free-icons";
 import { Icon } from "../../components/Icon";
 import {
+  memo,
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
+  useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
   type RefObject,
@@ -24,26 +33,31 @@ import type { Platform } from "../../lib/platform";
 import {
   context2d,
   createCanvas,
+  createRedactedCanvasCache,
   drawAnnotations,
   layoutForState,
-  renderImageCanvas,
+  type AnyCanvas,
   type LayerSources,
 } from "./render";
+import type { CanvasDraftStore } from "./canvas-draft";
+import { createStagePainter, type StagePaint } from "./stage-paint";
+import { subscribeTextFonts, textFontGeneration } from "./text-fonts";
 import { fitInside, useElementSize } from "./use-element-size";
 import type { DecodedImage } from "./use-image-source";
 import { useStageViewport, type StageViewportController } from "./use-stage-viewport";
 
 type PreviewStageProps = {
   image: DecodedImage;
+  /** The document, or a control's live draft (a slider being dragged). */
   state: ImageDocumentState;
+  /**
+   * What a gesture on the canvas is drafting. While one is, the stage shows it and keeps the
+   * scale and the base image's place from `state`, the state it started from, so a layer
+   * dragged past the edge grows the canvas without the whole picture shrinking under the pointer.
+   */
+  canvasDraft: CanvasDraftStore;
   /** Preview-sized pictures for the image layers. */
   layers: LayerSources;
-  /**
-   * While a drag on the canvas is under way, the state it started from. The stage keeps the
-   * scale and the base image's place from it, so a layer dragged past the edge grows the canvas
-   * without the whole picture shrinking under the pointer.
-   */
-  fitState: ImageDocumentState | null;
   label: string;
   /** Rendered over the base image (not the frame padding), sized to it. */
   overlay?: ReactNode;
@@ -122,6 +136,13 @@ function FrameShadowShapes({ layout, k }: { layout: ImageLayout; k: number }) {
   ));
 }
 
+const NO_ANNOTATIONS: readonly ImageAnnotation[] = [];
+const OTHER_CHANGE: AnnotationListChange = { kind: "other" };
+const NO_SHIFT: PixelOffset = { x: 0, y: 0 };
+
+/** A cached composition and the `textFontGeneration()` its text was drawn against. */
+type TextRaster = { readonly canvas: AnyCanvas; readonly fonts: number };
+
 /**
  * Live result, drawn from the downscaled preview bitmap. The `<canvas>` holds only the edited
  * composition (crop, redactions, drawings), cached apart from the frame. Background, padding,
@@ -130,9 +151,9 @@ function FrameShadowShapes({ layout, k }: { layout: ImageLayout; k: number }) {
  */
 export function PreviewStage({
   image,
-  state,
+  state: committed,
+  canvasDraft,
   layers,
-  fitState,
   label,
   overlay,
   platform,
@@ -143,6 +164,9 @@ export function PreviewStage({
   const contentRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const box = useElementSize(boxRef);
+  const drafted = useSyncExternalStore(canvasDraft.subscribe, canvasDraft.get);
+  const state = drafted ?? committed;
+  const fitState = drafted === null ? null : committed;
 
   const scale = image.preview.width / image.size.width;
   const { crop, rotation, flipX, redactions, annotations, frame, transparent, exportFormat } =
@@ -180,72 +204,215 @@ export function PreviewStage({
   // a pen stroke never re-runs the blur and pixelate passes. The cache layout leaves out the
   // frame (padding and shadow live in the composite) but keeps the frame's corner radius on the
   // base image, which an expanded composition rounds inside the canvas exactly as the export does.
-  const baseRadius = layout.baseRadius;
-  const noFrameLayout = useMemo(
+  // During a drag the cache layout comes from the state the drag started from, and the live one
+  // is used only when the drag really changes it (a layer grown past the edge). Moving a drawing
+  // then keeps the cached base image instead of redrawing it on every pointer move.
+  const committedAnnotations = (fitState ?? state).annotations;
+  const committedBaseRadius = fitLayout.baseRadius;
+  const committedNoFrameLayout = useMemo(
     () => ({
       ...layoutForState({
         sourceSize: image.size,
-        state: { crop, rotation, flipX, annotations, frame: NO_FRAME },
+        state: { crop, rotation, flipX, annotations: committedAnnotations, frame: NO_FRAME },
         scale,
       }),
-      baseRadius,
+      baseRadius: committedBaseRadius,
     }),
-    [image.size, crop, rotation, flipX, annotations, scale, baseRadius],
+    [image.size, crop, rotation, flipX, committedAnnotations, scale, committedBaseRadius],
   );
+  const baseRadius = layout.baseRadius;
+  const liveNoFrameLayout = useMemo(
+    () =>
+      annotations === committedAnnotations && baseRadius === committedBaseRadius
+        ? committedNoFrameLayout
+        : {
+            ...layoutForState({
+              sourceSize: image.size,
+              state: { crop, rotation, flipX, annotations, frame: NO_FRAME },
+              scale,
+            }),
+            baseRadius,
+          },
+    [
+      annotations,
+      committedAnnotations,
+      baseRadius,
+      committedBaseRadius,
+      committedNoFrameLayout,
+      image.size,
+      crop,
+      rotation,
+      flipX,
+      scale,
+    ],
+  );
+  const sameLayout = imageLayoutsEqual(liveNoFrameLayout, committedNoFrameLayout);
+  // A layer dragged past the edge grows the composition around the base image without changing
+  // how the base image is drawn: the cache stays in the drag's starting layout and is painted
+  // shifted, instead of re-rendering the base image on every move. Blur and pixelate sample
+  // with smoothing that can land a level apart once moved, so with those the cache is redrawn.
+  const baseShift = sameLayout
+    ? NO_SHIFT
+    : redactions.every((redaction) => redaction.style === "blackout")
+      ? baseImageShift(committedNoFrameLayout, liveNoFrameLayout)
+      : null;
+  const paintLayout = sameLayout ? committedNoFrameLayout : liveNoFrameLayout;
+  const noFrameLayout = baseShift === null ? liveNoFrameLayout : committedNoFrameLayout;
+  // Repaints only what a redaction change reaches; a new canvas object means new pixels.
+  const [redactionCache] = useState(createRedactedCanvasCache);
   const redactedCanvas = useMemo(
     () =>
-      renderImageCanvas({
+      redactionCache.render({
         source: image.preview,
         sourceSize: image.size,
         geometry: { crop, rotation, flipX },
         redactions,
         layout: noFrameLayout,
       }),
-    [image, crop, rotation, flipX, redactions, noFrameLayout],
+    [redactionCache, image, crop, rotation, flipX, redactions, noFrameLayout],
   );
+  // React may run a render and throw it away; the cache must not draw over what is on screen,
+  // which this memo hands back as is whenever its inputs come back.
+  useLayoutEffect(() => {
+    redactionCache.retain(redactedCanvas);
+  }, [redactionCache, redactedCanvas]);
 
-  const imageCanvas = useMemo(() => {
-    if (annotations.length === 0) return redactedCanvas;
+  const geometry = useMemo(() => ({ crop, rotation, flipX }), [crop, rotation, flipX]);
+  // Text drawn before the text font loaded used a fallback, so a load redraws the cached
+  // drawings below, each tagged with the generation it was drawn against, and the painter
+  // repaints in full for a paint of a new generation.
+  const textFonts = useSyncExternalStore(subscribeTextFonts, textFontGeneration);
+  // A drag that grows the composition (a layer past the edge) changes the layout; everything is
+  // then redrawn over the base image on each move.
+  const layoutChanged = paintLayout !== committedNoFrameLayout;
+
+  // The composition the drag started from: base image, redactions and the committed drawings.
+  // Outside a drag it is simply what is on screen.
+  const committedImage = useMemo((): TextRaster => {
+    if (layoutChanged || committedAnnotations.length === 0) {
+      return { canvas: redactedCanvas, fonts: textFonts };
+    }
     const copy = createCanvas(redactedCanvas.width, redactedCanvas.height);
     const ctx = context2d(copy);
     ctx.drawImage(redactedCanvas, 0, 0);
     drawAnnotations({
       ctx,
       canvas: copy,
-      annotations,
-      geometry: { crop, rotation, flipX },
+      annotations: committedAnnotations,
+      geometry,
       sourceSize: image.size,
       layout: noFrameLayout,
       layers,
       redactions,
     });
-    return copy;
+    return { canvas: copy, fonts: textFonts };
   }, [
+    layoutChanged,
+    textFonts,
     redactedCanvas,
-    annotations,
+    committedAnnotations,
+    geometry,
     image.size,
-    crop,
-    rotation,
-    flipX,
     noFrameLayout,
     layers,
     redactions,
   ]);
+
+  const change = useMemo(
+    () => (layoutChanged ? OTHER_CHANGE : annotationListChange(committedAnnotations, annotations)),
+    [layoutChanged, committedAnnotations, annotations],
+  );
+  const replacedIndex = change.kind === "replaced" ? change.index : null;
+  // While one drawing or picture is dragged, everything under it is cached once, and each move
+  // paints only it and what lies above it.
+  const underReplaced = useMemo((): TextRaster | null => {
+    if (replacedIndex === null) return null;
+    if (replacedIndex === 0) return { canvas: redactedCanvas, fonts: textFonts };
+    const copy = createCanvas(redactedCanvas.width, redactedCanvas.height);
+    const ctx = context2d(copy);
+    ctx.drawImage(redactedCanvas, 0, 0);
+    drawAnnotations({
+      ctx,
+      canvas: copy,
+      annotations: committedAnnotations.slice(0, replacedIndex),
+      geometry,
+      sourceSize: image.size,
+      layout: noFrameLayout,
+      layers,
+      redactions,
+    });
+    return { canvas: copy, fonts: textFonts };
+  }, [
+    replacedIndex,
+    textFonts,
+    redactedCanvas,
+    committedAnnotations,
+    geometry,
+    image.size,
+    noFrameLayout,
+    layers,
+    redactions,
+  ]);
+  const paint: StagePaint = (() => {
+    const shared = {
+      shows: annotations,
+      underAt: NO_SHIFT,
+      layout: paintLayout,
+      geometry,
+      sourceSize: image.size,
+      layers,
+      redactions,
+      fonts: textFonts,
+    };
+    switch (change.kind) {
+      case "same":
+        return {
+          ...shared,
+          under: committedImage.canvas,
+          fonts: committedImage.fonts,
+          extras: NO_ANNOTATIONS,
+        };
+      case "appended":
+        return {
+          ...shared,
+          under: committedImage.canvas,
+          fonts: committedImage.fonts,
+          extras: annotations.slice(change.index),
+        };
+      case "replaced":
+        return underReplaced === null
+          ? { ...shared, under: redactedCanvas, extras: annotations }
+          : {
+              ...shared,
+              under: underReplaced.canvas,
+              fonts: underReplaced.fonts,
+              extras: annotations.slice(change.index),
+            };
+      case "other":
+        return {
+          ...shared,
+          under: redactedCanvas,
+          underAt: baseShift ?? NO_SHIFT,
+          extras: annotations,
+        };
+      default: {
+        const _exhaustive: never = change;
+        return _exhaustive;
+      }
+    }
+  })();
 
   const background = useMemo(
     () => resolveExportBackground({ frame, transparent, format: exportFormat }),
     [frame, transparent, exportFormat],
   );
 
+  // The display canvas keeps what it last painted, so a drag repaints only where it moved.
+  const [painter] = useState(createStagePainter);
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
-    if (canvas === null) return;
-    if (canvas.width !== imageCanvas.width) canvas.width = imageCanvas.width;
-    if (canvas.height !== imageCanvas.height) canvas.height = imageCanvas.height;
-    const ctx = context2d(canvas);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(imageCanvas, 0, 0);
-  }, [imageCanvas]);
+    if (canvas !== null) painter.paint(canvas, paint);
+  });
 
   // Screen pixels per output pixel, taken from the fit layout so a drag never rescales.
   const fitDisplay = fitInside(fitLayout.output, box);
@@ -405,9 +572,10 @@ export function PreviewStage({
 
 /**
  * Zoom readout and controls. Desktop: always in the bottom-right corner. Phones: only while
- * zoomed or panned, so the fitted image stays uncluttered above the dock.
+ * zoomed or panned, so the fitted image stays uncluttered above the dock. Memoized: the stage
+ * re-renders on every move of a drag on the canvas, which never changes the zoom.
  */
-function ZoomPill({
+const ZoomPill = memo(function ZoomPill({
   percent: value,
   atFit,
   platform,
@@ -459,4 +627,4 @@ function ZoomPill({
       />
     </div>
   );
-}
+});

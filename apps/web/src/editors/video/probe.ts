@@ -1,9 +1,7 @@
 /** Reads what the editor needs from a video file with mediabunny: duration, size, frame rate. */
 import {
-  defaultVideoExportFormat,
   normalizeFrameRate,
-  type ExportAudioCodec,
-  type ExportVideoCodec,
+  resolveDefaultVideoExportFormat,
   type VideoExportFormat,
 } from "@edit-here/core";
 import {
@@ -40,17 +38,6 @@ export type VideoProbe = {
   /** The format a fresh document starts on: one this browser can export (`defaultVideoExportFormat`). */
   readonly defaultExportFormat: VideoExportFormat;
 };
-
-const AUDIO_CODECS: readonly ExportAudioCodec[] = ["aac", "opus"];
-const VIDEO_CODECS: readonly ExportVideoCodec[] = ["avc", "vp9", "vp8", "av1"];
-
-async function supported<T>(
-  codecs: readonly T[],
-  check: (codec: T) => Promise<boolean>,
-): Promise<ReadonlySet<T>> {
-  const results = await Promise.all(codecs.map((codec) => check(codec).catch(() => false)));
-  return new Set(codecs.filter((_, index) => results[index] === true));
-}
 
 export type ProbeResult =
   | { readonly kind: "ready"; readonly probe: VideoProbe }
@@ -115,18 +102,17 @@ export async function probeVideo(file: File): Promise<ProbeResult> {
       input.dispose();
       return { kind: "unsupported", message: "This video has no playable frames." };
     }
-    const [encodableAudio, encodableVideo] = await Promise.all([
-      sourceAudio === null
-        ? Promise.resolve(new Set<ExportAudioCodec>())
-        : supported(AUDIO_CODECS, (codec) => canEncodeAudio(codec)),
+    // Each encoder check costs tens of milliseconds, so ask only what the default depends on.
+    const defaultExportFormat = await resolveDefaultVideoExportFormat({
+      hasAudio: sourceAudio !== null,
+      canEncodeAudio: (codec) => canEncodeAudio(codec).catch(() => false),
       // Encoders want even sizes; the export rounds the same way.
-      supported(VIDEO_CODECS, (codec) =>
+      canEncodeVideo: (codec) =>
         canEncodeVideo(codec, {
           width: Math.max(2, width - (width % 2)),
           height: Math.max(2, height - (height % 2)),
-        }),
-      ),
-    ]);
+        }).catch(() => false),
+    });
     return {
       kind: "ready",
       probe: {
@@ -139,11 +125,7 @@ export async function probeVideo(file: File): Promise<ProbeResult> {
         width,
         height,
         videoCodec,
-        defaultExportFormat: defaultVideoExportFormat({
-          hasAudio: sourceAudio !== null,
-          encodableAudio,
-          encodableVideo,
-        }),
+        defaultExportFormat,
       },
     };
   } catch (cause) {

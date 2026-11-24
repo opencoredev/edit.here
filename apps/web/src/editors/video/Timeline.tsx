@@ -12,6 +12,8 @@ import type { InputAudioTrack, InputVideoTrack } from "mediabunny";
 import {
   memo,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -44,6 +46,8 @@ type TimelineProps = {
   readonly frameRate: number;
   readonly segments: readonly VideoSegment[];
   readonly playhead: PlayheadStore;
+  /** The opened file, which the filmstrip worker demuxes on its own. */
+  readonly file: File;
   readonly videoTrack: InputVideoTrack;
   readonly audioTrack: InputAudioTrack | null;
   /** Source width over height, for thumbnail tiles. */
@@ -81,13 +85,14 @@ function percent(time: number, duration: number): string {
 }
 
 /** Filmstrip tiles drawn into one canvas that spans the track. */
-function Filmstrip(props: {
+const Filmstrip = memo(function Filmstrip(props: {
+  readonly file: File;
   readonly track: InputVideoTrack;
   readonly duration: number;
   readonly width: number;
   readonly aspect: number;
 }) {
-  const { track, duration, width, aspect } = props;
+  const { file, track, duration, width, aspect } = props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dpr = Math.min(2, typeof window === "undefined" ? 1 : window.devicePixelRatio || 1);
   const idealTile = STRIP_HEIGHT * clamp(aspect, 0.4, 3);
@@ -95,6 +100,7 @@ function Filmstrip(props: {
   // Decode at a fixed tile size per count so resizing a few pixels doesn't re-decode.
   const tileWidth = count > 0 ? Math.ceil((idealTile * dpr) / 8) * 8 : 0;
   const tiles = useFilmstrip({
+    file,
     track,
     duration,
     count,
@@ -137,9 +143,21 @@ function Filmstrip(props: {
       style={{ height: STRIP_HEIGHT }}
     />
   );
+});
+
+function wavePath(peaks: Float32Array): string {
+  let max = 0;
+  for (const value of peaks) max = Math.max(max, value);
+  const scale = max > 0 ? 1 / max : 0;
+  let path = "";
+  peaks.forEach((value, i) => {
+    const h = Math.max(0.02, value * scale);
+    path += `M${i} ${(1 - h) / 2}h0.7v${h}h-0.7z`;
+  });
+  return path;
 }
 
-function Waveform(props: {
+const Waveform = memo(function Waveform(props: {
   readonly track: InputAudioTrack;
   readonly duration: number;
   readonly dimmed: boolean;
@@ -149,15 +167,8 @@ function Waveform(props: {
     duration: props.duration,
     buckets: WAVE_BUCKETS,
   });
-  if (peaks === null) return null;
-  let max = 0;
-  for (const value of peaks) max = Math.max(max, value);
-  const scale = max > 0 ? 1 / max : 0;
-  let path = "";
-  peaks.forEach((value, i) => {
-    const h = Math.max(0.02, value * scale);
-    path += `M${i} ${(1 - h) / 2}h0.7v${h}h-0.7z`;
-  });
+  const path = useMemo(() => (peaks === null ? null : wavePath(peaks)), [peaks]);
+  if (path === null) return null;
   return (
     <svg
       aria-hidden="true"
@@ -171,7 +182,7 @@ function Waveform(props: {
       <path d={path} fill="currentColor" />
     </svg>
   );
-}
+});
 
 function PlayheadMarker(props: { readonly store: PlayheadStore; readonly duration: number }) {
   const time = usePlayhead(props.store);
@@ -291,7 +302,7 @@ const SegmentLayer = memo(function SegmentLayer(props: {
  * grip's right edge on the in point, the out grip's left edge on the out point), so their hit
  * targets never overlap, even at the shortest span.
  */
-function TrimHandles(props: {
+const TrimHandles = memo(function TrimHandles(props: {
   readonly segments: readonly VideoSegment[];
   readonly trim: TrimBounds;
   readonly duration: number;
@@ -415,13 +426,24 @@ function TrimHandles(props: {
       {grip("out")}
     </div>
   );
-}
+});
 
 export function Timeline(props: TimelineProps) {
   const { duration, frameRate, segments, playhead, onScrub, onToggleSegment } = props;
   const trackRef = useRef<HTMLDivElement>(null);
   const width = useElementWidth(trackRef);
-  const time = usePlayhead(playhead);
+  // The slider's value follows the playhead without re-rendering the timeline every frame.
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    if (track === null) return;
+    const sync = () => {
+      const time = playhead.get();
+      track.setAttribute("aria-valuenow", String(Number(time.toFixed(3))));
+      track.setAttribute("aria-valuetext", formatTimecode(time, frameRate));
+    };
+    sync();
+    return playhead.subscribe(sync);
+  }, [playhead, frameRate]);
   const scrubbing = useRef(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
@@ -468,8 +490,6 @@ export function Timeline(props: TimelineProps) {
           aria-label="Timeline"
           aria-valuemin={0}
           aria-valuemax={Number(duration.toFixed(3))}
-          aria-valuenow={Number(time.toFixed(3))}
-          aria-valuetext={formatTimecode(time, frameRate)}
           className="absolute inset-0 cursor-ew-resize rounded-sm bg-n2 touch-none overflow-hidden outline-none select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -483,6 +503,7 @@ export function Timeline(props: TimelineProps) {
           }}
         >
           <Filmstrip
+            file={props.file}
             track={props.videoTrack}
             duration={duration}
             width={width}

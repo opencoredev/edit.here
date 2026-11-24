@@ -42,15 +42,42 @@ export function closeDecodedImage(image: DecodedImage): void {
   if (image.preview !== image.full) image.preview.close();
 }
 
+/**
+ * Decodes begun while the editor first renders, by file, until the effect takes one over. The
+ * first commit and paint of a freshly loaded editor take a few hundred milliseconds on a slow
+ * device, and the decode runs off the main thread meanwhile instead of starting after them.
+ */
+const earlyDecodes = new WeakMap<File, Promise<DecodedImage>>();
+/** Files an early decode was started for, so later renders don't start another. */
+const earlyStarted = new WeakSet<File>();
+
+function startEarlyDecode(file: File): void {
+  if (earlyStarted.has(file)) return;
+  earlyStarted.add(file);
+  const decoding = decodeImage(file);
+  // A failure is reported when the effect takes the decode over; until then it is handled.
+  decoding.catch(() => undefined);
+  earlyDecodes.set(file, decoding);
+}
+
+/** The early decode of `file`, once; later calls (a StrictMode rerun, a reopen) decode anew. */
+function takeDecode(file: File, signal: AbortSignal): Promise<DecodedImage> {
+  const early = earlyDecodes.get(file);
+  if (early === undefined) return decodeImage(file, signal);
+  earlyDecodes.delete(file);
+  return early;
+}
+
 /** Decodes `file` once and frees the bitmaps when the file changes or the editor closes. */
 export function useImageSource(file: File): ImageSourceState {
+  startEarlyDecode(file);
   const [state, setState] = useState<ImageSourceState>({ kind: "loading" });
   useEffect(() => {
     const controller = new AbortController();
     let decoded: DecodedImage | null = null;
     // oxlint-disable-next-line react/set-state-in-effect -- resets for a new file before decoding
     setState({ kind: "loading" });
-    decodeImage(file, controller.signal).then(
+    takeDecode(file, controller.signal).then(
       (image) => {
         if (controller.signal.aborted) {
           image.full.close();

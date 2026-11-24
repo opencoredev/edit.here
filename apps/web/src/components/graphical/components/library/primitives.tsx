@@ -3,18 +3,20 @@ import type { ComponentProps, CSSProperties } from 'react';
 import { componentBoxShadow } from "../../lib/theme-model";
 import {
   themeContainer,
+  themeFamily,
   themePart,
   usePartAppearance,
   usePartStyle,
 } from "./component-theme";
-import { MenuItemContent } from "./menu-item-content";
+export { ThemedDialog } from "./family-dialog";
+export { ThemedMenu } from "./family-menu";
+export { ThemedTooltip } from "./family-tooltip";
 import { Accordion as BaseAccordion } from '@base-ui/react/accordion';
 import { AlertDialog as BaseAlertDialog } from '@base-ui/react/alert-dialog';
 import { Autocomplete as BaseAutocomplete } from '@base-ui/react/autocomplete';
 import { Avatar as BaseAvatar } from '@base-ui/react/avatar';
 import { Collapsible as BaseCollapsible } from '@base-ui/react/collapsible';
 import { ContextMenu as BaseContextMenu } from '@base-ui/react/context-menu';
-import { Dialog as BaseDialog } from '@base-ui/react/dialog';
 import { Drawer as BaseDrawer } from '@base-ui/react/drawer';
 import { Field as BaseField } from '@base-ui/react/field';
 import { Fieldset as BaseFieldset } from '@base-ui/react/fieldset';
@@ -46,7 +48,6 @@ import { Tabs as BaseTabs } from '@base-ui/react/tabs';
 import { SlidingTab, SlidingTabsList } from "./tabs";
 import { Toast as BaseToast } from '@base-ui/react/toast';
 import { Toolbar as BaseToolbar } from '@base-ui/react/toolbar';
-import { Tooltip as BaseTooltip } from '@base-ui/react/tooltip';
 import { CheckboxGroup as BaseCheckboxGroup } from '@base-ui/react/checkbox-group';
 import { Form as BaseForm } from '@base-ui/react/form';
 import { Menubar as BaseMenubar } from '@base-ui/react/menubar';
@@ -106,8 +107,7 @@ function AccordionPanel({
   );
 }
 
-export const ThemedAccordion = {
-  ...BaseAccordion,
+export const ThemedAccordion = themeFamily(BaseAccordion, () => ({
   Item: AccordionItem,
   Trigger: themePart(
     BaseAccordion.Trigger,
@@ -122,9 +122,8 @@ export const ThemedAccordion = {
     'ui-accordion-indicator',
   ),
   Panel: AccordionPanel,
-};
-export const ThemedAlertDialog = {
-  ...BaseAlertDialog,
+}));
+export const ThemedAlertDialog = themeFamily(BaseAlertDialog, () => ({
   Trigger: themePart(
     BaseAlertDialog.Trigger,
     'alert-dialog',
@@ -151,7 +150,7 @@ export const ThemedAlertDialog = {
     'ui-copy',
   ),
   Close: themePart(BaseAlertDialog.Close, 'alert-dialog', 'close', 'ui-button'),
-};
+}));
 const AutocompletePositionerSurface = themeContainer(
   BaseAutocomplete.Positioner,
   'ui-positioner',
@@ -182,8 +181,7 @@ function AutocompleteEmpty({
   );
 }
 
-export const ThemedAutocomplete = {
-  ...BaseAutocomplete,
+export const ThemedAutocomplete = themeFamily(BaseAutocomplete, () => ({
   Input: themePart(BaseAutocomplete.Input, 'autocomplete', 'input', 'ui-input'),
   Positioner: AutocompletePositioner,
   Popup: themePart(
@@ -194,7 +192,7 @@ export const ThemedAutocomplete = {
   ),
   Item: themePart(BaseAutocomplete.Item, 'autocomplete', 'option', 'ui-option'),
   Empty: AutocompleteEmpty,
-};
+}));
 const AvatarSurface = themePart(
   BaseAvatar.Root,
   'avatar',
@@ -228,8 +226,7 @@ function AvatarRoot({
     />
   );
 }
-export const ThemedAvatar = {
-  ...BaseAvatar,
+export const ThemedAvatar = themeFamily(BaseAvatar, () => ({
   Root: AvatarRoot,
   Fallback: themePart(
     BaseAvatar.Fallback,
@@ -237,7 +234,7 @@ export const ThemedAvatar = {
     'fallback',
     'ui-avatar-fallback',
   ),
-};
+}));
 const CollapsiblePanelSurface = themePart(
   BaseCollapsible.Panel,
   'collapsible',
@@ -256,8 +253,7 @@ function CollapsiblePanel({
   );
 }
 
-export const ThemedCollapsible = {
-  ...BaseCollapsible,
+export const ThemedCollapsible = themeFamily(BaseCollapsible, () => ({
   Root: themePart(
     BaseCollapsible.Root,
     'collapsible',
@@ -277,9 +273,8 @@ export const ThemedCollapsible = {
     'ui-collapsible-indicator',
   ),
   Panel: CollapsiblePanel,
-};
-export const ThemedContextMenu = {
-  ...BaseContextMenu,
+}));
+export const ThemedContextMenu = themeFamily(BaseContextMenu, () => ({
   Trigger: themePart(
     BaseContextMenu.Trigger,
     'context-menu',
@@ -311,23 +306,8 @@ export const ThemedContextMenu = {
     'separator',
     'ui-separator',
   ),
-};
-export const ThemedDialog = {
-  ...BaseDialog,
-  Trigger: themePart(BaseDialog.Trigger, 'dialog', 'trigger', 'ui-button'),
-  Popup: themePart(BaseDialog.Popup, 'dialog', 'popover', 'ui-popup ui-modal'),
-  Backdrop: themePart(BaseDialog.Backdrop, 'dialog', 'backdrop', 'ui-backdrop'),
-  Title: themePart(BaseDialog.Title, 'dialog', 'title', 'ui-title'),
-  Description: themePart(
-    BaseDialog.Description,
-    'dialog',
-    'description',
-    'ui-copy',
-  ),
-  Close: themePart(BaseDialog.Close, 'dialog', 'close', 'ui-button'),
-};
-export const ThemedDrawer = {
-  ...BaseDrawer,
+}));
+export const ThemedDrawer = themeFamily(BaseDrawer, () => ({
   Trigger: themePart(BaseDrawer.Trigger, 'drawer', 'trigger', 'ui-button'),
   Popup: themePart(BaseDrawer.Popup, 'drawer', 'popover', 'ui-popup ui-drawer'),
   Backdrop: themePart(BaseDrawer.Backdrop, 'drawer', 'backdrop', 'ui-backdrop'),
@@ -339,9 +319,8 @@ export const ThemedDrawer = {
     'ui-copy',
   ),
   Close: themePart(BaseDrawer.Close, 'drawer', 'close', 'ui-button'),
-};
-export const ThemedField = {
-  ...BaseField,
+}));
+export const ThemedField = themeFamily(BaseField, () => ({
   Root: themePart(BaseField.Root, 'field', 'group', 'ui-stack'),
   Label: themePart(BaseField.Label, 'field', 'label', 'ui-label'),
   Control: themePart(BaseField.Control, 'field', 'input', 'ui-input'),
@@ -352,54 +331,12 @@ export const ThemedField = {
     'ui-copy',
   ),
   Error: themePart(BaseField.Error, 'field', 'error', 'ui-copy'),
-};
-export const ThemedFieldset = {
-  ...BaseFieldset,
+}));
+export const ThemedFieldset = themeFamily(BaseFieldset, () => ({
   Root: themePart(BaseFieldset.Root, 'fieldset', 'group', 'ui-stack'),
   Legend: themePart(BaseFieldset.Legend, 'fieldset', 'legend', 'ui-title'),
-};
-export const ThemedMenu = {
-  ...BaseMenu,
-  Trigger: themePart(BaseMenu.Trigger, 'menu', 'trigger', 'ui-button'),
-  Positioner: themeContainer(BaseMenu.Positioner, 'ui-positioner'),
-  Popup: themePart(
-    BaseMenu.Popup,
-    'menu',
-    'popover',
-    'ui-popup ui-menu ui-menu-detailed',
-  ),
-  ItemContent: MenuItemContent,
-  Item: themePart(BaseMenu.Item, 'menu', 'option', 'ui-option'),
-  SubmenuTrigger: themePart(
-    BaseMenu.SubmenuTrigger,
-    'menu',
-    'option',
-    'ui-option',
-  ),
-  GroupLabel: themePart(
-    BaseMenu.GroupLabel,
-    'menu',
-    'label',
-    'ui-menu-group-label',
-  ),
-  CheckboxItem: themePart(BaseMenu.CheckboxItem, 'menu', 'option', 'ui-option'),
-  CheckboxItemIndicator: themePart(
-    BaseMenu.CheckboxItemIndicator,
-    'menu',
-    'indicator',
-    'ui-mark',
-  ),
-  RadioItem: themePart(BaseMenu.RadioItem, 'menu', 'option', 'ui-option'),
-  RadioItemIndicator: themePart(
-    BaseMenu.RadioItemIndicator,
-    'menu',
-    'indicator',
-    'ui-mark',
-  ),
-  Separator: themePart(BaseMenu.Separator, 'menu', 'separator', 'ui-separator'),
-};
-export const ThemedMeter = {
-  ...BaseMeter,
+}));
+export const ThemedMeter = themeFamily(BaseMeter, () => ({
   Label: themePart(BaseMeter.Label, 'meter', 'label', 'ui-label'),
   Value: themePart(BaseMeter.Value, 'meter', 'value', 'ui-value'),
   Track: themePart(BaseMeter.Track, 'meter', 'track', 'ui-range-track'),
@@ -409,9 +346,8 @@ export const ThemedMeter = {
     'indicator',
     'ui-range-fill',
   ),
-};
-export const ThemedNavigationMenu = {
-  ...BaseNavigationMenu,
+}));
+export const ThemedNavigationMenu = themeFamily(BaseNavigationMenu, () => ({
   List: themePart(BaseNavigationMenu.List, 'navigation-menu', 'list', 'ui-row'),
   Trigger: themePart(
     BaseNavigationMenu.Trigger,
@@ -431,9 +367,8 @@ export const ThemedNavigationMenu = {
     'popover',
     'ui-popup ui-menu',
   ),
-};
-export const ThemedNumberField = {
-  ...BaseNumberField,
+}));
+export const ThemedNumberField = themeFamily(BaseNumberField, () => ({
   Group: NumberFieldGroup,
   Input: themePart(
     AnimatedNumberInput,
@@ -453,9 +388,8 @@ export const ThemedNumberField = {
     'decrement',
     'ui-button ui-number-step',
   ),
-};
-export const ThemedOTPField = {
-  ...BaseOTPField,
+}));
+export const ThemedOTPField = themeFamily(BaseOTPField, () => ({
   Input: themePart(BaseOTPField.Input, 'otp-field', 'input', 'ui-otp-input'),
   Separator: themePart(
     BaseOTPField.Separator,
@@ -463,9 +397,8 @@ export const ThemedOTPField = {
     'separator',
     'ui-separator ui-otp-separator',
   ),
-};
-export const ThemedPopover = {
-  ...BasePopover,
+}));
+export const ThemedPopover = themeFamily(BasePopover, () => ({
   Trigger: themePart(BasePopover.Trigger, 'popover', 'trigger', 'ui-button'),
   Popup: themePart(
     BasePopover.Popup,
@@ -481,9 +414,8 @@ export const ThemedPopover = {
     'ui-copy',
   ),
   Close: themePart(BasePopover.Close, 'popover', 'close', 'ui-button'),
-};
-export const ThemedPreviewCard = {
-  ...BasePreviewCard,
+}));
+export const ThemedPreviewCard = themeFamily(BasePreviewCard, () => ({
   Trigger: themePart(
     BasePreviewCard.Trigger,
     'preview-card',
@@ -496,9 +428,8 @@ export const ThemedPreviewCard = {
     'popover',
     'ui-popup ui-popover',
   ),
-};
-export const ThemedProgress = {
-  ...BaseProgress,
+}));
+export const ThemedProgress = themeFamily(BaseProgress, () => ({
   Label: themePart(BaseProgress.Label, 'progress', 'label', 'ui-label'),
   Value: themePart(BaseProgress.Value, 'progress', 'value', 'ui-value'),
   Track: themePart(BaseProgress.Track, 'progress', 'track', 'ui-range-track'),
@@ -508,9 +439,8 @@ export const ThemedProgress = {
     'indicator',
     'ui-range-fill',
   ),
-};
-export const ThemedRadio = {
-  ...BaseRadio,
+}));
+export const ThemedRadio = themeFamily(BaseRadio, () => ({
   Root: themePart(BaseRadio.Root, 'radio', 'control', 'ui-choice'),
   Indicator: themePart(
     BaseRadio.Indicator,
@@ -518,9 +448,8 @@ export const ThemedRadio = {
     'indicator',
     'ui-radio-dot',
   ),
-};
-export const ThemedCheckbox = {
-  ...BaseCheckbox,
+}));
+export const ThemedCheckbox = themeFamily(BaseCheckbox, () => ({
   Root: themePart(BaseCheckbox.Root, 'checkbox-group', 'control', 'ui-choice'),
   Indicator: themePart(
     BaseCheckbox.Indicator,
@@ -528,9 +457,8 @@ export const ThemedCheckbox = {
     'indicator',
     'ui-checkmark',
   ),
-};
-export const ThemedScrollArea = {
-  ...BaseScrollArea,
+}));
+export const ThemedScrollArea = themeFamily(BaseScrollArea, () => ({
   Root: themePart(
     BaseScrollArea.Root,
     'scroll-area',
@@ -549,9 +477,8 @@ export const ThemedScrollArea = {
     'thumb',
     'ui-scroll-thumb',
   ),
-};
-export const ThemedSlider = {
-  ...BaseSlider,
+}));
+export const ThemedSlider = themeFamily(BaseSlider, () => ({
   Root: InsetSliderRoot,
   Control: InsetSliderControl,
   Label: themePart(BaseSlider.Label, 'slider', 'label', 'ui-label'),
@@ -564,15 +491,13 @@ export const ThemedSlider = {
     'ui-range-fill',
   ),
   Thumb: themePart(InsetSliderThumb, 'slider', 'thumb', 'ui-range-thumb'),
-};
-export const ThemedTabs = {
-  ...BaseTabs,
+}));
+export const ThemedTabs = themeFamily(BaseTabs, () => ({
   List: themePart(SlidingTabsList, 'tabs', 'list', 'ui-row ui-tabs-list'),
   Tab: themePart(SlidingTab, 'tabs', 'trigger', 'ui-button ui-tab'),
   Panel: themePart(BaseTabs.Panel, 'tabs', 'panel', 'ui-tab-panel'),
-};
-export const ThemedToast = {
-  ...BaseToast,
+}));
+export const ThemedToast = themeFamily(BaseToast, () => ({
   Viewport: themeContainer(BaseToast.Viewport, 'ui-toast-viewport'),
   Content: themeContainer(BaseToast.Content, 'ui-toast-content'),
   Root: themePart(BaseToast.Root, 'toast', 'popover', 'ui-popup ui-toast'),
@@ -585,9 +510,8 @@ export const ThemedToast = {
   ),
   Action: themePart(BaseToast.Action, 'toast', 'action', 'ui-button'),
   Close: themePart(BaseToast.Close, 'toast', 'close', 'ui-button'),
-};
-export const ThemedToolbar = {
-  ...BaseToolbar,
+}));
+export const ThemedToolbar = themeFamily(BaseToolbar, () => ({
   Root: themePart(BaseToolbar.Root, 'toolbar', 'group', 'ui-row ui-toolbar'),
   Button: themePart(BaseToolbar.Button, 'toolbar', 'control', 'ui-button'),
   Link: themePart(BaseToolbar.Link, 'toolbar', 'control', 'ui-button'),
@@ -597,17 +521,7 @@ export const ThemedToolbar = {
     'separator',
     'ui-separator ui-vertical',
   ),
-};
-export const ThemedTooltip = {
-  ...BaseTooltip,
-  Trigger: themePart(BaseTooltip.Trigger, 'tooltip', 'trigger', 'ui-button'),
-  Popup: themePart(
-    BaseTooltip.Popup,
-    'tooltip',
-    'popover',
-    'ui-popup ui-tooltip',
-  ),
-};
+}));
 export const ThemedCheckboxGroup = themePart(
   BaseCheckboxGroup,
   'checkbox-group',

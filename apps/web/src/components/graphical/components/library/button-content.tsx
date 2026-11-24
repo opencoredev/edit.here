@@ -2,7 +2,7 @@
 
 import { LoaderCircle } from "./control-icons";
 import type { ReactNode } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useThemeMotion } from "./component-theme";
 
 /** Animated visual content; give the enclosing button an explicit accessible name. */
@@ -28,7 +28,7 @@ export function ThemedButtonContent({
         <span className="themed-button-content-layer">{content}</span>
       ) : (
         <AnimatePresence initial={false}>
-          <motion.span
+          <m.span
             key={loading ? 'spinner' : contentKey}
             className="themed-button-content-layer"
             initial={{ opacity: 0, scale: 0.75, filter: 'blur(4px)' }}
@@ -37,7 +37,7 @@ export function ThemedButtonContent({
             transition={transition}
           >
             {content}
-          </motion.span>
+          </m.span>
         </AnimatePresence>
       )}
     </span>

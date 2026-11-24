@@ -48,12 +48,18 @@ import {
   createAppearanceResolver,
   resolvePartAppearances,
   themeContainer,
+  themeFamily,
   themePart,
+  themeStatics,
 } from "./component-theme";
 import { useGraphicalTheme } from "./graphical-provider";
 import * as Library from "./primitives";
 
 export { GraphicalProvider, useGraphicalTheme } from "./graphical-provider";
+export { Button, ButtonLabel } from "./family-button";
+export { Dialog } from "./family-dialog";
+export { Menu } from "./family-menu";
+export { Tooltip } from "./family-tooltip";
 export { ThemedButtonContent as ButtonContent } from "./button-content";
 export { ThemedAnimatedValue as AnimatedValue } from "./animated-value";
 export { ThemedIcon, IconRendererProvider } from "./icon";
@@ -103,33 +109,6 @@ function FamilyTheme({
       {children}
     </ComponentTheme>
   );
-}
-
-export function Button({
-  variant = 'primary',
-  ...props
-}: ComponentProps<typeof BaseButton> & { variant?: ButtonVariant }) {
-  const { document, colorMode } = useGraphicalTheme();
-  const appearances = useMemo(
-    () => ({
-      rest: resolveButtonPartStyle(document, colorMode, 'rest', variant),
-      hover: resolveButtonPartStyle(document, colorMode, 'hover', variant),
-      focus: resolveButtonPartStyle(document, colorMode, 'focus', variant),
-      disabled: resolveButtonPartStyle(
-        document,
-        colorMode,
-        'disabled',
-        variant,
-      ),
-    }),
-    [document, colorMode, variant],
-  );
-  return <ThemedButton {...props} appearances={appearances} />;
-}
-
-// Button already merges the label part into every variant and state.
-export function ButtonLabel(props: ComponentProps<'span'>) {
-  return <span {...props} />;
 }
 
 export function Input(
@@ -222,13 +201,12 @@ function CheckboxIndicator({
     </BaseCheckbox.Indicator>
   );
 }
-export const Checkbox = {
-  ...BaseCheckbox,
+export const Checkbox = themeFamily(BaseCheckbox, () => ({
   Root: CheckboxRoot,
   Indicator: CheckboxIndicator,
   Label: themePart('span', 'checkbox', 'label'),
   Row: themeContainer('label', 'ui-choice-label graphical-choice-row'),
-};
+}));
 
 function SwitchRoot(props: ComponentProps<typeof BaseSwitch.Root>) {
   const { document, colorMode } = useGraphicalTheme();
@@ -266,8 +244,7 @@ function SwitchThumb({
     />
   );
 }
-export const Switch = {
-  ...BaseSwitch,
+export const Switch = themeFamily(BaseSwitch, () => ({
   Root: SwitchRoot,
   Thumb: SwitchThumb,
   Row: themePart(
@@ -277,7 +254,7 @@ export const Switch = {
     'ui-choice-row graphical-choice-row',
   ),
   Label: themePart('span', 'switch', 'label'),
-};
+}));
 
 function useSelectAppearances() {
   const { document, colorMode } = useGraphicalTheme();
@@ -393,8 +370,7 @@ function SelectPositioner(props: ComponentProps<typeof BaseSelect.Positioner>) {
     />
   );
 }
-export const Select = {
-  ...BaseSelect,
+export const Select = themeFamily(BaseSelect, () => ({
   Label: themePart(BaseSelect.Label, 'select', 'label'),
   Trigger: SelectTrigger,
   Positioner: SelectPositioner,
@@ -414,7 +390,7 @@ export const Select = {
       <BaseSelect.ItemIndicator {...props}>{children}</BaseSelect.ItemIndicator>
     );
   },
-};
+}));
 
 /** The complete, single-selection field used by the preview. */
 export function SelectField<Value extends string>(
@@ -709,8 +685,7 @@ function ComboboxEmpty({
     />
   );
 }
-export const Combobox = {
-  ...BaseCombobox,
+export const Combobox = themeFamily(BaseCombobox, () => ({
   Root: ComboboxRoot,
   Label: ComboboxLabel,
   Field: ComboboxFieldSurface,
@@ -725,30 +700,24 @@ export const Combobox = {
     'combobox-option-check',
   ),
   Empty: ComboboxEmpty,
-};
+}));
 
-export const Accordion = {
-  ...Library.ThemedAccordion,
+export const Accordion = themeFamily(Library.ThemedAccordion, () => ({
   Content: themePart('div', 'accordion', 'content', 'ui-copy'),
-};
-export const AlertDialog = {
-  ...Library.ThemedAlertDialog,
+}));
+export const AlertDialog = themeFamily(Library.ThemedAlertDialog, () => ({
   Action: themePart(BaseButton, 'alert-dialog', 'action', 'ui-button'),
-};
-export const Autocomplete = {
-  ...Library.ThemedAutocomplete,
+}));
+export const Autocomplete = themeFamily(Library.ThemedAutocomplete, () => ({
   Label: themePart('label', 'autocomplete', 'label', 'ui-label'),
-};
-export const Avatar = {
-  ...Library.ThemedAvatar,
+}));
+export const Avatar = themeFamily(Library.ThemedAvatar, () => ({
   Image: themeContainer(Library.ThemedAvatar.Image, 'ui-avatar-image'),
-};
-export const Collapsible = {
-  ...Library.ThemedCollapsible,
+}));
+export const Collapsible = themeFamily(Library.ThemedCollapsible, () => ({
   Content: themePart('div', 'collapsible', 'content', 'ui-copy'),
-};
-export const ContextMenu = {
-  ...Library.ThemedContextMenu,
+}));
+export const ContextMenu = themeFamily(Library.ThemedContextMenu, () => ({
   Positioner: themeContainer(
     Library.ThemedContextMenu.Positioner,
     'ui-positioner',
@@ -777,20 +746,14 @@ export const ContextMenu = {
     'option',
     'ui-option',
   ),
-};
-export const Dialog = {
-  ...Library.ThemedDialog,
-  Action: themePart(BaseButton, 'dialog', 'action', 'ui-button'),
-};
-export const Drawer = {
-  ...Library.ThemedDrawer,
+}));
+export const Drawer = themeFamily(Library.ThemedDrawer, () => ({
   Viewport: themeContainer(Library.ThemedDrawer.Viewport, 'ui-drawer-viewport'),
   Content: themeContainer(Library.ThemedDrawer.Content, 'ui-drawer-content'),
   Action: themePart(BaseButton, 'drawer', 'action', 'ui-button'),
-};
+}));
 export const Field = Library.ThemedField;
-export const Fieldset = {
-  ...Library.ThemedFieldset,
+export const Fieldset = themeFamily(Library.ThemedFieldset, () => ({
   Content: themePart('div', 'fieldset', 'content', 'ui-stack'),
   Label: themePart(Library.ThemedField.Label, 'fieldset', 'label', 'ui-label'),
   Control: themePart(
@@ -806,8 +769,8 @@ export const Fieldset = {
     'ui-copy',
   ),
   Error: themePart(Library.ThemedField.Error, 'fieldset', 'error', 'ui-copy'),
-};
-export const Form = Object.assign(Library.ThemedForm, {
+}));
+export const Form = themeStatics(Library.ThemedForm, () => ({
   Content: themePart('div', 'form', 'content', 'ui-stack'),
   Label: themePart(Library.ThemedField.Label, 'form', 'label', 'ui-label'),
   Control: themePart(Library.ThemedField.Control, 'form', 'input', 'ui-input'),
@@ -819,8 +782,7 @@ export const Form = Object.assign(Library.ThemedForm, {
   ),
   Error: themePart(Library.ThemedField.Error, 'form', 'error', 'ui-copy'),
   Action: themePart(BaseButton, 'form', 'action', 'ui-button'),
-});
-export const Menu = Library.ThemedMenu;
+}));
 function MenubarRoot({
   children,
   ...props
@@ -831,56 +793,48 @@ function MenubarRoot({
     </FamilyTheme>
   );
 }
-export const Menubar = Object.assign(MenubarRoot, {
+export const Menubar = themeStatics(MenubarRoot, () => ({
   Trigger: Library.ThemedMenubarTrigger,
-});
-export const Meter = {
-  ...Library.ThemedMeter,
+}));
+export const Meter = themeFamily(Library.ThemedMeter, () => ({
   Root: themeContainer(Library.ThemedMeter.Root, 'ui-range'),
   Heading: themeContainer('div', 'ui-range-heading'),
-};
-export const NavigationMenu = {
-  ...Library.ThemedNavigationMenu,
+}));
+export const NavigationMenu = themeFamily(Library.ThemedNavigationMenu, () => ({
   Positioner: themeContainer(
     Library.ThemedNavigationMenu.Positioner,
     'ui-positioner',
   ),
-};
-export const NumberField = {
-  ...Library.ThemedNumberField,
+}));
+export const NumberField = themeFamily(Library.ThemedNumberField, () => ({
   Root: themeContainer(Library.ThemedNumberField.Root, 'ui-stack'),
   Group: themeContainer(Library.ThemedNumberField.Group, 'ui-row'),
   Label: Library.ThemedNumberLabel,
-};
-export const OTPField = {
-  ...Library.ThemedOTPField,
+}));
+export const OTPField = themeFamily(Library.ThemedOTPField, () => ({
   Root: themeContainer(Library.ThemedOTPField.Root, 'ui-row'),
   Label: themePart('label', 'otp-field', 'label'),
-};
-export const Popover = {
-  ...Library.ThemedPopover,
+}));
+export const Popover = themeFamily(Library.ThemedPopover, () => ({
   Positioner: themeContainer(Library.ThemedPopover.Positioner, 'ui-positioner'),
   Action: themePart(BaseButton, 'popover', 'action', 'ui-button'),
-};
-export const PreviewCard = {
-  ...Library.ThemedPreviewCard,
+}));
+export const PreviewCard = themeFamily(Library.ThemedPreviewCard, () => ({
   Positioner: themeContainer(
     Library.ThemedPreviewCard.Positioner,
     'ui-positioner',
   ),
   Title: themePart('div', 'preview-card', 'title', 'ui-title'),
   Description: themePart('div', 'preview-card', 'description', 'ui-copy'),
-};
-export const Progress = {
-  ...Library.ThemedProgress,
+}));
+export const Progress = themeFamily(Library.ThemedProgress, () => ({
   Root: themeContainer(Library.ThemedProgress.Root, 'ui-range'),
   Heading: themeContainer('div', 'ui-range-heading'),
-};
-export const Radio = {
-  ...Library.ThemedRadio,
+}));
+export const Radio = themeFamily(Library.ThemedRadio, () => ({
   Row: themeContainer('label', 'ui-choice-label'),
   Label: themePart('span', 'radio', 'label'),
-};
+}));
 function RadioGroupRoot({
   children,
   ...props
@@ -891,10 +845,10 @@ function RadioGroupRoot({
     </FamilyTheme>
   );
 }
-export const RadioGroup = Object.assign(RadioGroupRoot, {
+export const RadioGroup = themeStatics(RadioGroupRoot, () => ({
   Row: Library.ThemedRadioRow,
   Label: Library.ThemedRadioLabel,
-});
+}));
 function CheckboxGroupRoot({
   children,
   ...props
@@ -909,12 +863,11 @@ function CheckboxGroupRoot({
     </InCheckboxGroup>
   );
 }
-export const CheckboxGroup = Object.assign(CheckboxGroupRoot, {
+export const CheckboxGroup = themeStatics(CheckboxGroupRoot, () => ({
   Row: Library.ThemedCheckboxRow,
   Label: themePart('span', 'checkbox-group', 'label'),
-});
-export const ScrollArea = {
-  ...Library.ThemedScrollArea,
+}));
+export const ScrollArea = themeFamily(Library.ThemedScrollArea, () => ({
   Viewport: themeContainer(
     Library.ThemedScrollArea.Viewport,
     'ui-scroll-viewport',
@@ -925,25 +878,22 @@ export const ScrollArea = {
     'content',
     'ui-scroll-content',
   ),
-};
+}));
 export const Separator = Library.ThemedSeparator;
-export const Slider = {
-  ...Library.ThemedSlider,
+export const Slider = themeFamily(Library.ThemedSlider, () => ({
   Root: themeContainer(Library.ThemedSlider.Root, 'ui-range'),
   Control: themeContainer(Library.ThemedSlider.Control, 'ui-range-control'),
   Heading: themeContainer('div', 'ui-range-heading'),
-};
-export const Tabs = {
-  ...Library.ThemedTabs,
+}));
+export const Tabs = themeFamily(Library.ThemedTabs, () => ({
   Content: themePart('div', 'tabs', 'content', 'ui-copy'),
-};
-export const Toast = {
-  ...Library.ThemedToast,
+}));
+export const Toast = themeFamily(Library.ThemedToast, () => ({
   Trigger: themePart(BaseButton, 'toast', 'trigger', 'ui-button'),
-};
-export const Toggle = Object.assign(Library.ThemedToggle, {
+}));
+export const Toggle = themeStatics(Library.ThemedToggle, () => ({
   Label: themePart('span', 'toggle', 'label'),
-});
+}));
 function ToggleGroupRoot({
   children,
   ...props
@@ -956,14 +906,9 @@ function ToggleGroupRoot({
     </FamilyTheme>
   );
 }
-export const ToggleGroup = Object.assign(ToggleGroupRoot, {
+export const ToggleGroup = themeStatics(ToggleGroupRoot, () => ({
   Label: Library.ThemedToggleLabel,
-});
-export const Toolbar = {
-  ...Library.ThemedToolbar,
+}));
+export const Toolbar = themeFamily(Library.ThemedToolbar, () => ({
   Label: themePart('span', 'toolbar', 'label'),
-};
-export const Tooltip = {
-  ...Library.ThemedTooltip,
-  Positioner: themeContainer(Library.ThemedTooltip.Positioner, 'ui-positioner'),
-};
+}));

@@ -1,14 +1,9 @@
-import type { MediaKind } from "@edit-here/core";
 import { Cancel01Icon, StarIcon } from "@hugeicons/core-free-icons";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
+import { useRef } from "react";
 import type { StarPromptPlacement } from "../lib/analytics";
 import { REPO_URL } from "../lib/repo";
-import { AppearanceLatch } from "../lib/star-prompt";
 import { Icon } from "./Icon";
-
-/** A calm pause after the page settles, so the prompt never flashes in during startup. */
-const SHOW_DELAY_MS = 800;
 
 /**
  * Where the pill sits, clear of every toolbar, options tray, canvas, zoom pill, timeline, and
@@ -30,56 +25,31 @@ const WRAPPER_CLASS: Record<StarPromptPlacement, string> = {
 };
 
 /**
- * A small floating ask to star the repo, shown to returning visitors. The link is a real link
- * (Enter or click opens GitHub in a new tab); either answer hides the prompt for good.
+ * The pill that asks returning visitors to star the repo, drawn and animated; `StarPromptHost`
+ * decides when it shows. The link is a real link (Enter or click opens GitHub in a new tab);
+ * either answer hides the prompt for good.
  */
 export function StarPrompt({
-  active,
-  kind,
-  onShown,
+  visible,
+  placement,
   onStar,
   onDismiss,
 }: {
-  /** Eligible and the page is ready; the pill appears after a short pause. */
-  active: boolean;
-  /** The open editor, or `null` on Home. */
-  kind: MediaKind | null;
-  /** The pill appeared (once per appearance). */
-  onShown: (placement: StarPromptPlacement) => void;
+  visible: boolean;
+  /** Where it sits: Home, or over the open editor. */
+  placement: StarPromptPlacement;
   /** The GitHub link was opened (click, Enter or middle click). */
   onStar: (placement: StarPromptPlacement) => void;
   /** The dismiss button was pressed. */
   onDismiss: (placement: StarPromptPlacement) => void;
 }) {
   const reduced = useReducedMotion() === true;
-  const [settled, setSettled] = useState(false);
   const dismissSpaceHeld = useRef(false);
-
-  useEffect(() => {
-    if (!active) return;
-    const timer = setTimeout(() => setSettled(true), SHOW_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [active]);
-
-  const placement: StarPromptPlacement = kind ?? "home";
-  const visible = active && settled;
-
-  // Report each appearance once, with the placement it appeared in. Moving between Home and an
-  // editor while it shows is not a new appearance; the answer carries where it was given. The
-  // latch survives StrictMode re-running the effect.
-  const [shownLatch] = useState(() => new AppearanceLatch());
-  const latestShown = useRef({ onShown, placement });
-  useEffect(() => {
-    latestShown.current = { onShown, placement };
-  });
-  useEffect(() => {
-    if (shownLatch.update(visible)) latestShown.current.onShown(latestShown.current.placement);
-  }, [visible, shownLatch]);
 
   return (
     <AnimatePresence>
       {visible ? (
-        <motion.div
+        <m.div
           key="star-prompt"
           initial={reduced ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -138,7 +108,7 @@ export function StarPrompt({
               <Icon icon={Cancel01Icon} className="size-3.5" />
             </button>
           </div>
-        </motion.div>
+        </m.div>
       ) : null}
     </AnimatePresence>
   );

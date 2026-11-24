@@ -136,6 +136,7 @@ import {
 import { writeFrameToClipboard } from "./copy-frame";
 import { attachPreviewAudio, releasePreviewAudio, setPreviewGain } from "./preview-audio";
 import { probeVideo, type ProbeResult, type VideoProbe } from "./probe";
+import { createSeeker, type Seeker } from "./seeker";
 import { Timeline, type ScrubPhase, type TrimBounds, type TrimEdge } from "./Timeline";
 import { randomId } from "../../lib/new-id";
 
@@ -394,6 +395,19 @@ function VideoWorkspace({
     adjustTargetRef.current = adjustTarget;
   });
 
+  // Every write to the element's time goes through the seeker, which holds the latest time the
+  // user wants until it lands, whether playback runs or not (see `seeker.ts`).
+  const seekerRef = useRef<Seeker | null>(null);
+  useEffect(() => {
+    if (videoElement === null) return;
+    const seeker = createSeeker(videoElement, (time) => playhead.set(time));
+    seekerRef.current = seeker;
+    return () => {
+      seeker.dispose();
+      if (seekerRef.current === seeker) seekerRef.current = null;
+    };
+  }, [videoElement, playhead]);
+
   const commit = useCallback((update: (state: VideoDocumentState) => VideoDocumentState) => {
     setHistory((h) => commitVideoState(h, update(h.present)));
   }, []);
@@ -403,8 +417,7 @@ function VideoWorkspace({
     (time: number) => {
       const t = clamp(time, 0, duration);
       const centered = Math.min(duration, (frameIndexAt(t, fps) + 0.5) / fps);
-      const video = videoRef.current;
-      if (video !== null) video.currentTime = centered;
+      seekerRef.current?.seek(centered);
       playhead.set(centered);
     },
     [duration, fps, playhead],
@@ -414,8 +427,7 @@ function VideoWorkspace({
   const seekExact = useCallback(
     (time: number) => {
       const t = clamp(time, 0, duration);
-      const video = videoRef.current;
-      if (video !== null) video.currentTime = t;
+      seekerRef.current?.seek(t);
       playhead.set(t);
     },
     [duration, playhead],
@@ -473,12 +485,17 @@ function VideoWorkspace({
   // --- playback: native forward play, manual reverse, deleted segments skipped ---------------
   useEffect(() => {
     const video = videoRef.current;
-    if (video === null) return;
+    const seeker = seekerRef.current;
+    if (video === null || seeker === null) return;
+    // Pausing only ends playback's hold on the time (the cleanup below): a target the user
+    // queued behind the running seek, before or during playback, still lands.
     if (shuttle.kind === "paused") {
       video.pause();
       video.playbackRate = 1;
       return;
     }
+    // Playback starts from the time the user last asked for, which the element may not show yet.
+    const current = seeker.play();
     const segments = (): readonly VideoSegment[] => docRef.current.segments;
     /** The speed of the clip at `time`, so playback speeds up and slows down clip by clip. */
     const clipSpeed = (time: number): number => {
@@ -490,20 +507,23 @@ function VideoWorkspace({
     let raf = 0;
     const stop = (at: number) => {
       video.pause();
-      video.currentTime = at;
-      playhead.set(at);
+      if (seeker.end(at)) playhead.set(at);
       setShuttle(SHUTTLE_PAUSED);
     };
 
     if (shuttle.direction === "forward") {
-      const from = video.currentTime >= duration - 1 / fps ? 0 : video.currentTime;
+      const from = current >= duration - 1 / fps ? 0 : current;
       const start = nextKeptTime(segments(), from) ?? firstKeptTime(segments());
       if (start === null) {
+        // Nothing plays; a queued target still lands.
+        seeker.stop();
         setShuttle(SHUTTLE_PAUSED);
         onStatus("Every segment is cut. Press X on one to restore it.", "info");
         return;
       }
-      if (Math.abs(start - video.currentTime) > 1e-3) video.currentTime = start;
+      // Native playback runs from `start`, so it replaces a queued target now; a start within a
+      // millisecond of the element's time leaves the element where it is.
+      seeker.jump(Math.abs(start - video.currentTime) > 1e-3 ? start : video.currentTime);
       const rateAt = (time: number) => clamp(shuttle.speed * clipSpeed(time), 0.25, 16);
       video.playbackRate = rateAt(start);
       video.play().catch(() => setShuttle(SHUTTLE_PAUSED));
@@ -514,7 +534,7 @@ function VideoWorkspace({
           stop(Math.min(t, lastKeptTime(segments()) ?? t));
           return;
         }
-        if (next > t + 1e-3) video.currentTime = next;
+        if (next > t + 1e-3) seeker.jump(next);
         // Crossing into a clip with its own speed changes the rate on this frame.
         const rate = rateAt(next);
         if (video.playbackRate !== rate) video.playbackRate = rate;
@@ -522,11 +542,14 @@ function VideoWorkspace({
         raf = requestAnimationFrame(tick);
       };
       raf = requestAnimationFrame(tick);
-      return () => cancelAnimationFrame(raf);
+      return () => {
+        cancelAnimationFrame(raf);
+        seeker.stop();
+      };
     }
 
     video.pause();
-    let t = video.currentTime;
+    let t = current;
     const head = firstKeptTime(segments());
     if (head !== null && t <= head + 1e-3) t = lastKeptTime(segments()) ?? t;
     let last = performance.now();
@@ -540,13 +563,17 @@ function VideoWorkspace({
         return;
       }
       t = previous;
-      // Reverse "playback" is a stream of seeks; skip one while the last is still decoding.
-      if (!video.seeking) video.currentTime = t;
+      // Reverse "playback" is a stream of seeks; the seeker drops a frame while the last is
+      // still decoding or the user's queued target has yet to land.
+      seeker.frame(t);
       playhead.set(t);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      seeker.stop();
+    };
   }, [shuttle, duration, fps, playhead, onStatus]);
 
   // --- commands -------------------------------------------------------------------------------
@@ -915,78 +942,83 @@ function VideoWorkspace({
   const adjustedClips = doc.segments.filter((s) => !s.deleted && hasSegmentOverrides(s)).length;
   const clipLabel = `Clip ${activeIndex + 1}`;
 
-  const toolButton = (args: {
-    tool: Exclude<VideoTool, "none">;
-    action: KeybindAction;
-    label: string;
-    mobileLabel: string;
-    icon: IconSvgElement;
-  }) => {
-    const open = doc.tool === args.tool;
+  // The dock and transport skip re-rendering on drags (trim, volume) that don't change them.
+  const allMuted = allClipsMuted(doc);
+  const segments = doc.segments;
+  const tool = doc.tool;
+  const bar = useMemo(() => {
+    const toolButton = (args: {
+      tool: Exclude<VideoTool, "none">;
+      action: KeybindAction;
+      label: string;
+      mobileLabel: string;
+      icon: IconSvgElement;
+    }) => {
+      const open = tool === args.tool;
+      return (
+        <HintButton
+          label={open ? `Close ${args.label.toLowerCase()}` : args.label}
+          mobileLabel={args.mobileLabel}
+          icon={<Icon icon={args.icon} className="size-4" />}
+          {...numberedHint(args.action)}
+          platform={platform}
+          pressed={open}
+          variant={open ? "secondary" : "ghost"}
+          disabled={exporting}
+          onClick={() => commands.toggleTool(args.tool)}
+        />
+      );
+    };
     return (
-      <HintButton
-        label={open ? `Close ${args.label.toLowerCase()}` : args.label}
-        mobileLabel={args.mobileLabel}
-        icon={<Icon icon={args.icon} className="size-4" />}
-        {...numberedHint(args.action)}
-        platform={platform}
-        pressed={open}
-        variant={open ? "secondary" : "ghost"}
-        disabled={exporting}
-        onClick={() => commands.toggleTool(args.tool)}
-      />
+      <DockBar label="Video tools">
+        <HintButton
+          label="Split at playhead"
+          mobileLabel="Split"
+          icon={<Icon icon={ScissorIcon} className="size-4" />}
+          {...numberedHint("video.split")}
+          platform={platform}
+          disabled={exporting}
+          onClick={commands.split}
+        />
+        <CutButton
+          store={playhead}
+          segments={segments}
+          platform={platform}
+          disabled={exporting}
+          onClick={commands.cut}
+        />
+        <DockDivider />
+        {toolButton({
+          tool: "trim",
+          action: "video.trimTool",
+          label: "Trim",
+          mobileLabel: "Trim",
+          icon: SecondBracketIcon,
+        })}
+        {toolButton({
+          tool: "crop",
+          action: "video.cropToggle",
+          label: "Crop and transform",
+          mobileLabel: "Crop",
+          icon: CropIcon,
+        })}
+        {toolButton({
+          tool: "speed",
+          action: "video.speedTool",
+          label: "Speed",
+          mobileLabel: "Speed",
+          icon: GaugeIcon,
+        })}
+        {toolButton({
+          tool: "audio",
+          action: "video.audioTool",
+          label: "Audio",
+          mobileLabel: allMuted ? "Muted" : "Audio",
+          icon: allMuted ? VolumeOffIcon : VolumeHighIcon,
+        })}
+      </DockBar>
     );
-  };
-
-  const bar = (
-    <DockBar label="Video tools">
-      <HintButton
-        label="Split at playhead"
-        mobileLabel="Split"
-        icon={<Icon icon={ScissorIcon} className="size-4" />}
-        {...numberedHint("video.split")}
-        platform={platform}
-        disabled={exporting}
-        onClick={commands.split}
-      />
-      <CutButton
-        store={playhead}
-        segments={doc.segments}
-        platform={platform}
-        disabled={exporting}
-        onClick={commands.cut}
-      />
-      <DockDivider />
-      {toolButton({
-        tool: "trim",
-        action: "video.trimTool",
-        label: "Trim",
-        mobileLabel: "Trim",
-        icon: SecondBracketIcon,
-      })}
-      {toolButton({
-        tool: "crop",
-        action: "video.cropToggle",
-        label: "Crop and transform",
-        mobileLabel: "Crop",
-        icon: CropIcon,
-      })}
-      {toolButton({
-        tool: "speed",
-        action: "video.speedTool",
-        label: "Speed",
-        mobileLabel: "Speed",
-        icon: GaugeIcon,
-      })}
-      {toolButton({
-        tool: "audio",
-        action: "video.audioTool",
-        label: "Audio",
-        mobileLabel: allClipsMuted(doc) ? "Muted" : "Audio",
-        icon: allClipsMuted(doc) ? VolumeOffIcon : VolumeHighIcon,
-      })}
-    </DockBar>
-  );
+  }, [platform, exporting, commands, playhead, segments, tool, allMuted]);
 
   const doneButton = (
     <HintButton
@@ -1255,41 +1287,45 @@ function VideoWorkspace({
     }
   })();
 
-  const transport = (
-    <div className="flex items-center gap-0.5" role="toolbar" aria-label="Playback">
-      <HintButton
-        label={shuttle.kind === "paused" ? "Play" : "Pause"}
-        icon={
-          shuttle.kind === "paused" ? (
-            <Icon icon={PlayIcon} className="size-4" />
-          ) : (
-            <Icon icon={PauseIcon} className="size-4" />
-          )
-        }
-        combo={comboFor("video.playPause")}
-        platform={platform}
-        variant="secondary"
-        disabled={exporting}
-        onClick={commands.togglePlay}
-      />
-      <HintButton
-        label="Previous frame"
-        icon={<Icon icon={PreviousIcon} className="size-4" />}
-        combo={comboFor("video.stepBack")}
-        platform={platform}
-        disabled={exporting}
-        onClick={() => commands.step(-1)}
-      />
-      <HintButton
-        label="Next frame"
-        icon={<Icon icon={NextIcon} className="size-4" />}
-        combo={comboFor("video.stepForward")}
-        platform={platform}
-        disabled={exporting}
-        onClick={() => commands.step(1)}
-      />
-      <TimecodeReadout store={playhead} fps={fps} duration={duration} />
-    </div>
+  const paused = shuttle.kind === "paused";
+  const transport = useMemo(
+    () => (
+      <div className="flex items-center gap-0.5" role="toolbar" aria-label="Playback">
+        <HintButton
+          label={paused ? "Play" : "Pause"}
+          icon={
+            paused ? (
+              <Icon icon={PlayIcon} className="size-4" />
+            ) : (
+              <Icon icon={PauseIcon} className="size-4" />
+            )
+          }
+          combo={comboFor("video.playPause")}
+          platform={platform}
+          variant="secondary"
+          disabled={exporting}
+          onClick={commands.togglePlay}
+        />
+        <HintButton
+          label="Previous frame"
+          icon={<Icon icon={PreviousIcon} className="size-4" />}
+          combo={comboFor("video.stepBack")}
+          platform={platform}
+          disabled={exporting}
+          onClick={() => commands.step(-1)}
+        />
+        <HintButton
+          label="Next frame"
+          icon={<Icon icon={NextIcon} className="size-4" />}
+          combo={comboFor("video.stepForward")}
+          platform={platform}
+          disabled={exporting}
+          onClick={() => commands.step(1)}
+        />
+        <TimecodeReadout store={playhead} fps={fps} duration={duration} />
+      </div>
+    ),
+    [paused, platform, exporting, commands, playhead, fps, duration],
   );
 
   const clipSpeeds = doc.segments.some((s) => !s.deleted && s.speed !== undefined);
@@ -1350,9 +1386,6 @@ function VideoWorkspace({
                   className="absolute top-1/2 left-1/2 block max-w-none"
                   style={videoStyle}
                   onEnded={() => setShuttle(SHUTTLE_PAUSED)}
-                  onSeeked={(event) => {
-                    if (shuttle.kind === "paused") playhead.set(event.currentTarget.currentTime);
-                  }}
                   onError={() => {
                     const message = "This browser can't play this video for preview.";
                     setPlaybackError(message);
@@ -1419,6 +1452,7 @@ function VideoWorkspace({
         frameRate={fps}
         segments={shownSegments}
         playhead={playhead}
+        file={file}
         videoTrack={probe.videoTrack}
         audioTrack={probe.audioTrack}
         audioDimmed={doc.muted || doc.volume === 0}

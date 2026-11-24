@@ -1,70 +1,135 @@
 /** Filmstrip thumbnails and an audio waveform for the timeline, decoded with mediabunny. */
-import { filmstripTimestamps } from "@edit-here/core";
-import {
-  AudioBufferSink,
-  CanvasSink,
-  type InputAudioTrack,
-  type InputVideoTrack,
-} from "mediabunny";
+import { AudioBufferSink, type InputAudioTrack, type InputVideoTrack } from "mediabunny";
 import { useEffect, useState } from "react";
+import { decodeFilmstrip } from "./filmstrip-decode";
+import { isFilmstripReply, type FilmstripRequest } from "./filmstrip-protocol";
 
 export type FilmstripTile = {
   readonly index: number;
   readonly bitmap: ImageBitmap;
 };
 
+/** One filmstrip worker shared by every strip on the page; ended when the last one lets go. */
+let shared: { readonly worker: Worker; users: number } | null = null;
+let nextRequestId = 1;
+
+function acquireWorker(): Worker | null {
+  if (shared !== null) {
+    shared.users++;
+    return shared.worker;
+  }
+  if (typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined") return null;
+  try {
+    const worker = new Worker(new URL("./filmstrip.worker.ts", import.meta.url), {
+      type: "module",
+    });
+    shared = { worker, users: 1 };
+    return worker;
+  } catch {
+    return null;
+  }
+}
+
+function releaseWorker(worker: Worker): void {
+  if (shared === null || shared.worker !== worker) return;
+  shared.users--;
+  if (shared.users > 0) return;
+  shared.worker.terminate();
+  shared = null;
+}
+
 /**
- * Decodes `count` evenly spaced thumbnails of `tileWidth`×`tileHeight` device pixels. Tiles
- * stream in as they decode; the previous strip stays until the first new tile arrives.
+ * Decodes `count` evenly spaced thumbnails of `tileWidth`×`tileHeight` device pixels, in a
+ * worker when the browser has one (falling back to the main thread if it fails). Tiles stream
+ * in as they decode; the previous strip stays until the first new tile arrives.
  */
 export function useFilmstrip(args: {
+  readonly file: File;
   readonly track: InputVideoTrack | null;
   readonly duration: number;
   readonly count: number;
   readonly tileWidth: number;
   readonly tileHeight: number;
 }): readonly FilmstripTile[] {
-  const { track, duration, count, tileWidth, tileHeight } = args;
+  const { file, track, duration, count, tileWidth, tileHeight } = args;
   const [tiles, setTiles] = useState<readonly FilmstripTile[]>([]);
 
   useEffect(() => {
     if (track === null || count <= 0 || tileWidth <= 0 || tileHeight <= 0) return;
     let cancelled = false;
     const created: ImageBitmap[] = [];
-    const run = async () => {
-      const sink = new CanvasSink(track, {
-        width: Math.round(tileWidth),
-        height: Math.round(tileHeight),
-        fit: "cover",
-        poolSize: 2,
-      });
-      const timestamps = filmstripTimestamps({ duration, count });
-      let index = 0;
-      let fresh = true;
-      for await (const wrapped of sink.canvasesAtTimestamps(timestamps)) {
-        if (cancelled) return;
-        const tileIndex = index++;
-        if (wrapped === null) continue;
-        const bitmap = await createImageBitmap(wrapped.canvas);
-        if (cancelled) {
-          bitmap.close();
+    let fresh = true;
+    const publish = (index: number, bitmap: ImageBitmap) => {
+      if (cancelled) {
+        bitmap.close();
+        return;
+      }
+      created.push(bitmap);
+      const tile = { index, bitmap };
+      const replace = fresh;
+      fresh = false;
+      setTiles((previous) => (replace ? [tile] : [...previous, tile]));
+    };
+    const job = { duration, count, tileWidth, tileHeight };
+    // Thumbnails are decoration: a decode failure leaves the strip empty.
+    const decodeHere = () => {
+      fresh = true;
+      decodeFilmstrip({ ...job, track }, publish, () => cancelled).catch(() => undefined);
+    };
+
+    const worker = acquireWorker();
+    if (worker === null) {
+      decodeHere();
+      return () => {
+        cancelled = true;
+        // Bitmaps from this run are closed once a newer run or unmount replaces them.
+        window.setTimeout(() => created.forEach((bitmap) => bitmap.close()), 1_000);
+      };
+    }
+    const id = nextRequestId++;
+    let settled = false;
+    const finish = (fallBack: boolean) => {
+      if (settled) return;
+      settled = true;
+      worker.removeEventListener("message", onMessage);
+      worker.removeEventListener("error", onError);
+      if (fallBack && !cancelled) decodeHere();
+    };
+    const onMessage = (event: MessageEvent<unknown>) => {
+      const reply = event.data;
+      if (!isFilmstripReply(reply) || reply.id !== id) return;
+      switch (reply.kind) {
+        case "tile":
+          publish(reply.index, reply.bitmap);
           return;
+        case "done":
+          finish(false);
+          return;
+        case "failed":
+          finish(true);
+          return;
+        default: {
+          const _exhaustive: never = reply;
+          return _exhaustive;
         }
-        created.push(bitmap);
-        const tile = { index: tileIndex, bitmap };
-        const replace = fresh;
-        fresh = false;
-        setTiles((previous) => (replace ? [tile] : [...previous, tile]));
       }
     };
-    // Thumbnails are decoration: a decode failure leaves the strip empty.
-    run().catch(() => undefined);
+    const onError = () => finish(true);
+    worker.addEventListener("message", onMessage);
+    worker.addEventListener("error", onError);
+    const request: FilmstripRequest = { kind: "start", id, file, ...job };
+    // oxlint-disable-next-line unicorn/require-post-message-target-origin -- a Worker, not a window
+    worker.postMessage(request);
     return () => {
       cancelled = true;
+      // oxlint-disable-next-line unicorn/require-post-message-target-origin -- a Worker, not a window
+      if (!settled) worker.postMessage({ kind: "cancel", id });
+      finish(false);
+      releaseWorker(worker);
       // Bitmaps from this run are closed once a newer run or unmount replaces them.
       window.setTimeout(() => created.forEach((bitmap) => bitmap.close()), 1_000);
     };
-  }, [track, duration, count, tileWidth, tileHeight]);
+  }, [file, track, duration, count, tileWidth, tileHeight]);
 
   return tiles;
 }

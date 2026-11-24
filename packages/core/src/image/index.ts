@@ -5,3 +5,4 @@ export * from "./background";
 export * from "./annotations";
 export * from "./viewport";
 export * from "./layers";
+export * from "./redaction-repaint";

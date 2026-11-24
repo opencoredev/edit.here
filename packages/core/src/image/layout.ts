@@ -16,6 +16,9 @@ export type PixelRect = {
   readonly height: number;
 };
 
+/** A move in whole pixels. */
+export type PixelOffset = { readonly x: number; readonly y: number };
+
 export type ShadowLayer = {
   readonly blur: number;
   readonly offsetY: number;
@@ -66,6 +69,71 @@ export function baseRectInContent(layout: ImageLayout): PixelRect {
     width: layout.image.width,
     height: layout.image.height,
   };
+}
+
+function sameSize(a: ImageSize, b: ImageSize): boolean {
+  return a.width === b.width && a.height === b.height;
+}
+
+function samePixelRect(a: PixelRect, b: PixelRect): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
+function sameShadowLayer(a: ShadowLayer, b: ShadowLayer): boolean {
+  return a.blur === b.blur && a.offsetY === b.offsetY && a.opacity === b.opacity;
+}
+
+function sameShadow(a: FrameShadow | null, b: FrameShadow | null): boolean {
+  if (a === null || b === null) return a === b;
+  return sameShadowLayer(a.ambient, b.ambient) && sameShadowLayer(a.contact, b.contact);
+}
+
+/**
+ * True when two layouts place every pixel the same. A drag that moves a drawing recomputes the
+ * layout without changing it, and a cache keyed on the layout can keep its pixels.
+ */
+export function imageLayoutsEqual(a: ImageLayout, b: ImageLayout): boolean {
+  if (a === b) return true;
+  return (
+    sameSize(a.oriented, b.oriented) &&
+    samePixelRect(a.cropPixels, b.cropPixels) &&
+    sameSize(a.output, b.output) &&
+    samePixelRect(a.image, b.image) &&
+    samePixelRect(a.content, b.content) &&
+    a.radius === b.radius &&
+    a.baseRadius === b.baseRadius &&
+    a.hairline === b.hairline &&
+    sameShadow(a.shadow, b.shadow) &&
+    a.shadowShapes.length === b.shadowShapes.length &&
+    a.shadowShapes.every((shape, index) => {
+      const other = b.shadowShapes[index];
+      return (
+        other !== undefined &&
+        shape.radius === other.radius &&
+        samePixelRect(shape.rect, other.rect)
+      );
+    })
+  );
+}
+
+/**
+ * How far the base image moves on the composition canvas from layout `from` to `to`, when it
+ * is drawn the same in both (same crop, size and corner radius) and only the composition around
+ * it changed, as when a layer is dragged past the edge. Null when the base image itself differs.
+ */
+export function baseImageShift(from: ImageLayout, to: ImageLayout): PixelOffset | null {
+  if (
+    !sameSize(from.oriented, to.oriented) ||
+    !samePixelRect(from.cropPixels, to.cropPixels) ||
+    from.image.width !== to.image.width ||
+    from.image.height !== to.image.height ||
+    from.baseRadius !== to.baseRadius
+  ) {
+    return null;
+  }
+  const a = baseRectInContent(from);
+  const b = baseRectInContent(to);
+  return { x: b.x - a.x, y: b.y - a.y };
 }
 
 /** Crop rect in whole oriented pixels; at least 1×1 and inside the image. */
@@ -282,5 +350,42 @@ export function coverPixels(rect: NormalizedRect, size: ImageSize): PixelRect {
   const y0 = clamp(Math.floor(rect.y * size.height), 0, size.height);
   const x1 = clamp(Math.ceil((rect.x + rect.width) * size.width), 0, size.width);
   const y1 = clamp(Math.ceil((rect.y + rect.height) * size.height), 0, size.height);
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
+// ---------------------------------------------------------------------------
+// Repaint regions
+
+/**
+ * Whole pixels on a canvas of `size` covering `view` (0..1 over `base`, the base image's rect on
+ * that canvas), grown by `margin` pixels on every side. Null when nothing of it is on the canvas.
+ */
+export function viewRectToCanvasPixels(args: {
+  readonly view: NormalizedRect;
+  readonly base: PixelRect;
+  readonly margin: number;
+  readonly size: ImageSize;
+}): PixelRect | null {
+  const { view, base, margin, size } = args;
+  const x0 = clamp(Math.floor(base.x + view.x * base.width - margin), 0, size.width);
+  const y0 = clamp(Math.floor(base.y + view.y * base.height - margin), 0, size.height);
+  const x1 = clamp(Math.ceil(base.x + (view.x + view.width) * base.width + margin), 0, size.width);
+  const y1 = clamp(
+    Math.ceil(base.y + (view.y + view.height) * base.height + margin),
+    0,
+    size.height,
+  );
+  if (!(x1 > x0 && y1 > y0)) return null;
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
+/** The smallest rect holding both; either may be null (no area). */
+export function unionPixelRects(a: PixelRect | null, b: PixelRect | null): PixelRect | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  const x0 = Math.min(a.x, b.x);
+  const y0 = Math.min(a.y, b.y);
+  const x1 = Math.max(a.x + a.width, b.x + b.width);
+  const y1 = Math.max(a.y + a.height, b.y + b.height);
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }

@@ -15,38 +15,96 @@ export function thumbnailScale(size: { readonly width: number; readonly height: 
   return longest <= THUMBNAIL_EDGE || longest <= 0 ? 1 : THUMBNAIL_EDGE / longest;
 }
 
+type ThumbnailCanvas = HTMLCanvasElement | OffscreenCanvas;
+
+/** True for an OffscreenCanvas; `typeof` first, since some browsers have no such global. */
+function isOffscreen(canvas: ThumbnailCanvas): canvas is OffscreenCanvas {
+  return typeof OffscreenCanvas !== "undefined" && canvas instanceof OffscreenCanvas;
+}
+
+function createThumbnailCanvas(width: number, height: number): ThumbnailCanvas {
+  if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(width, height);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  return canvas;
+}
+
+/**
+ * Encodes `canvas` without blocking the page: the pixels are read when this is called, and the
+ * encoder runs off the main thread where the browser allows it. Null when it can't encode.
+ */
+function encodeCanvas(canvas: ThumbnailCanvas, type: string): Promise<Blob | null> {
+  if (isOffscreen(canvas)) {
+    return canvas.convertToBlob({ type, quality: QUALITY }).catch(() => null);
+  }
+  return new Promise((resolve) => canvas.toBlob(resolve, type, QUALITY));
+}
+
+function context2d(
+  canvas: ThumbnailCanvas,
+): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null {
+  return isOffscreen(canvas) ? canvas.getContext("2d") : canvas.getContext("2d");
+}
+
+function blobToDataUrl(blob: Blob): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () =>
+      resolve(typeof reader.result === "string" ? reader.result : null),
+    );
+    reader.addEventListener("error", () => resolve(null));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Encodes a canvas already at thumbnail size, as WebP, or JPEG on a white matte where the
+ * browser can't encode WebP. The canvas is read right away, so its sources may close after.
+ */
+export async function encodeThumbnailCanvas(canvas: ThumbnailCanvas): Promise<string | null> {
+  const webp = encodeCanvas(canvas, "image/webp");
+  // Browsers that can't encode WebP hand back a PNG instead; the matte goes on only then, and
+  // only after the pixels for the WebP attempt were read.
+  const blob = await webp;
+  if (blob !== null && blob.type === "image/webp") return blobToDataUrl(blob);
+  const ctx = context2d(canvas);
+  if (ctx === null) return null;
+  ctx.globalCompositeOperation = "destination-over";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const jpeg = await encodeCanvas(canvas, "image/jpeg");
+  return jpeg === null ? null : blobToDataUrl(jpeg);
+}
+
 /**
  * Draws `source` (`width` × `height` pixels) at thumbnail size and encodes it. Transparency is
- * kept in WebP; the JPEG fallback gets a white matte.
+ * kept in WebP; the JPEG fallback gets a white matte. `source` is drawn before this returns its
+ * promise, so the caller may close it once the call is made.
  */
 export function encodeThumbnail(
   source: CanvasImageSource,
   width: number,
   height: number,
-): string | null {
-  if (width <= 0 || height <= 0) return null;
+): Promise<string | null> {
+  if (width <= 0 || height <= 0) return Promise.resolve(null);
   const scale = thumbnailScale({ width, height });
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(width * scale));
-  canvas.height = Math.max(1, Math.round(height * scale));
-  const ctx = canvas.getContext("2d");
-  if (ctx === null) return null;
+  const canvas = createThumbnailCanvas(
+    Math.max(1, Math.round(width * scale)),
+    Math.max(1, Math.round(height * scale)),
+  );
+  const ctx = context2d(canvas);
+  if (ctx === null) return Promise.resolve(null);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-  const webp = canvas.toDataURL("image/webp", QUALITY);
-  // Browsers that can't encode WebP hand back a PNG instead.
-  if (webp.startsWith("data:image/webp")) return webp;
-  ctx.globalCompositeOperation = "destination-over";
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", QUALITY);
+  return encodeThumbnailCanvas(canvas);
 }
 
 async function imageThumbnail(file: File): Promise<string | null> {
   const bitmap = await createImageBitmap(file);
   try {
-    return encodeThumbnail(bitmap, bitmap.width, bitmap.height);
+    return await encodeThumbnail(bitmap, bitmap.width, bitmap.height);
   } finally {
     bitmap.close();
   }
@@ -86,7 +144,7 @@ async function videoThumbnail(file: File): Promise<string | null> {
       video.currentTime = at;
       await seeked;
     }
-    return encodeThumbnail(video, video.videoWidth, video.videoHeight);
+    return await encodeThumbnail(video, video.videoWidth, video.videoHeight);
   } finally {
     video.removeAttribute("src");
     video.load();

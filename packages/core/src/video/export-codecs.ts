@@ -208,3 +208,35 @@ export function defaultVideoExportFormat(args: {
   if (works("mp4")) return "mp4";
   return works("webm") ? "webm" : "mp4";
 }
+
+/**
+ * The first of `candidates` that `check` accepts, asking one at a time in order. Browser codec
+ * checks can each take tens of milliseconds of main-thread time, so this stops at the first yes.
+ */
+export async function firstSupported<T>(
+  candidates: readonly T[],
+  check: (candidate: T) => Promise<boolean>,
+): Promise<T | null> {
+  for (const candidate of candidates) {
+    if (await check(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * `defaultVideoExportFormat`, asking the browser only what the answer depends on: MP4's audio
+ * and video codecs first, then WebM's only when MP4 can't be written, each list stopping at the
+ * first codec that works.
+ */
+export async function resolveDefaultVideoExportFormat(args: {
+  readonly hasAudio: boolean;
+  readonly canEncodeAudio: (codec: ExportAudioCodec) => Promise<boolean>;
+  readonly canEncodeVideo: (codec: ExportVideoCodec) => Promise<boolean>;
+}): Promise<VideoExportFormat> {
+  const works = async (format: VideoExportFormat): Promise<boolean> => {
+    if (args.hasAudio && !(await args.canEncodeAudio(AUDIO_TARGET[format]))) return false;
+    return (await firstSupported(VIDEO_ENCODE_ORDER[format], args.canEncodeVideo)) !== null;
+  };
+  if (await works("mp4")) return "mp4";
+  return (await works("webm")) ? "webm" : "mp4";
+}

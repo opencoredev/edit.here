@@ -252,6 +252,26 @@ export function usePartStyle(
   );
 }
 
+/**
+ * A Base UI family with some parts replaced: the same `{ ...base, ...parts }` object. The parts
+ * are built inside the call, and `vite.config.ts` marks it pure, so the bundler drops families
+ * nothing renders, Base UI code included.
+ */
+export function themeFamily<Base extends object, Parts extends object>(
+  base: Base,
+  parts: () => Parts,
+): Omit<Base, keyof Parts> & Parts {
+  return { ...base, ...parts() };
+}
+
+/** `Object.assign(target, parts())`, droppable like `themeFamily` when nothing uses it. */
+export function themeStatics<Target extends object, Parts extends object>(
+  target: Target,
+  parts: () => Parts,
+): Target & Parts {
+  return Object.assign(target, parts());
+}
+
 /** Structural portal containers need theme variables without a component surface. */
 export function themeContainer<C extends ElementType>(
   Base: C,

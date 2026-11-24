@@ -11,6 +11,7 @@
  * box (see `textAnchorCorner`), so a label near an edge stays near that edge and inside the image.
  */
 import { clamp } from "../operations";
+import { unionPixelRects, type PixelRect } from "./layout";
 import type {
   AnnotationStyle,
   ImageAnnotation,
@@ -742,4 +743,153 @@ export function duplicateImageAnnotation(args: {
   const annotations = [...state.annotations];
   annotations.splice(index + 1, 0, copy);
   return { ...state, annotations, selectedAnnotationId: args.newId };
+}
+
+// ---------------------------------------------------------------------------
+// Repainting
+
+/**
+ * How a list of annotations changed between two renders, by identity: nothing, one added on
+ * top, exactly one entry swapped for another (a drag), or anything else. A renderer repaints
+ * only what moved for the first three.
+ */
+export type AnnotationListChange =
+  | { readonly kind: "same" }
+  | { readonly kind: "appended"; readonly index: number }
+  | { readonly kind: "replaced"; readonly index: number }
+  | { readonly kind: "other" };
+
+export function annotationListChange(
+  before: readonly ImageAnnotation[],
+  after: readonly ImageAnnotation[],
+): AnnotationListChange {
+  if (before === after) return { kind: "same" };
+  if (after.length === before.length + 1) {
+    const same = before.every((annotation, index) => after[index] === annotation);
+    return same ? { kind: "appended", index: before.length } : { kind: "other" };
+  }
+  if (after.length !== before.length) return { kind: "other" };
+  let changed = -1;
+  for (let index = 0; index < before.length; index += 1) {
+    if (before[index] === after[index]) continue;
+    if (changed >= 0) return { kind: "other" };
+    changed = index;
+  }
+  return changed < 0 ? { kind: "same" } : { kind: "replaced", index: changed };
+}
+
+/** Which pixels of a canvas a repaint has to redo. */
+export type PixelRepaint =
+  | { readonly kind: "none" }
+  | { readonly kind: "full" }
+  | { readonly kind: "region"; readonly rect: PixelRect };
+
+/**
+ * The pixels that can differ between painting `before` and `after` over the same base, given
+ * `footprint`, the pixels drawing each annotation can touch (null when none are on the canvas).
+ *
+ * A drawing is composited pixel by pixel, so it changes only its own footprint, and a drawing
+ * over a changed pixel changes only that pixel. An image layer is different when the document
+ * has redactions (`redacted`): it re-runs the redactions it covers, which read everything under
+ * them and rewrite the whole box. So every image layer above the change, even one the change
+ * barely touches, may repaint its whole footprint.
+ */
+export function annotationChangeRegion(args: {
+  readonly before: readonly ImageAnnotation[];
+  readonly after: readonly ImageAnnotation[];
+  readonly footprint: (annotation: ImageAnnotation) => PixelRect | null;
+  readonly redacted: boolean;
+}): PixelRepaint {
+  const { before, after, footprint } = args;
+  const change = annotationListChange(before, after);
+  let rect: PixelRect | null;
+  let above: number;
+  switch (change.kind) {
+    case "same":
+      return { kind: "none" };
+    case "other":
+      return { kind: "full" };
+    case "appended": {
+      const added = after[change.index];
+      rect = added === undefined ? null : footprint(added);
+      above = change.index + 1;
+      break;
+    }
+    case "replaced": {
+      const was = before[change.index];
+      const now = after[change.index];
+      rect = unionPixelRects(
+        was === undefined ? null : footprint(was),
+        now === undefined ? null : footprint(now),
+      );
+      above = change.index + 1;
+      break;
+    }
+    default: {
+      const _exhaustive: never = change;
+      return _exhaustive;
+    }
+  }
+  if (rect === null) return { kind: "none" };
+  if (args.redacted) {
+    for (const annotation of after.slice(above)) {
+      if (isImageLayer(annotation)) rect = unionPixelRects(rect, footprint(annotation)) ?? rect;
+    }
+  }
+  return { kind: "region", rect };
+}
+
+type DocumentField = Exclude<keyof ImageDocumentState, "annotations">;
+
+/** One check per document field but the drawings, so a new field can't be left out. */
+const SAME_FIELD: {
+  readonly [K in DocumentField]: (a: ImageDocumentState, b: ImageDocumentState) => boolean;
+} = {
+  tool: (a, b) => a.tool === b.tool,
+  crop: (a, b) => a.crop === b.crop,
+  rotation: (a, b) => a.rotation === b.rotation,
+  flipX: (a, b) => a.flipX === b.flipX,
+  redactions: (a, b) => a.redactions === b.redactions,
+  selectedRedactionId: (a, b) => a.selectedRedactionId === b.selectedRedactionId,
+  redactionStyle: (a, b) => a.redactionStyle === b.redactionStyle,
+  selectedAnnotationId: (a, b) => a.selectedAnnotationId === b.selectedAnnotationId,
+  annotationStyle: (a, b) => a.annotationStyle === b.annotationStyle,
+  frame: (a, b) => a.frame === b.frame,
+  transparent: (a, b) => a.transparent === b.transparent,
+  exportFormat: (a, b) => a.exportFormat === b.exportFormat,
+};
+const SAME_FIELDS = Object.values(SAME_FIELD);
+
+/** Whether the controls for a selected annotation read the same for both. */
+function sameSelectionControls(a: ImageAnnotation, b: ImageAnnotation): boolean {
+  if (a.kind === "image" && b.kind === "image") {
+    return (
+      a.radius === b.radius && a.rect.width === b.rect.width && a.rect.height === b.rect.height
+    );
+  }
+  if (a.kind === "image" || b.kind === "image") return false;
+  return a.color === b.color && a.size === b.size;
+}
+
+/**
+ * True when two states differ at most in where their drawings and pictures sit, which the tool
+ * controls never show: the same settings, the same annotations in the same order, and the same
+ * style (or a picture's size and radius) on the selection. Controls kept for one state then
+ * read the same for the other, so a drag that only moves things need not re-render them.
+ */
+export function sameAnnotationControls(a: ImageDocumentState, b: ImageDocumentState): boolean {
+  if (a === b) return true;
+  if (!SAME_FIELDS.every((same) => same(a, b))) return false;
+  if (a.annotations.length !== b.annotations.length) return false;
+  for (let index = 0; index < a.annotations.length; index += 1) {
+    const x = a.annotations[index];
+    const y = b.annotations[index];
+    if (x === undefined || y === undefined || x.id !== y.id || x.kind !== y.kind) return false;
+  }
+  const id = a.selectedAnnotationId;
+  if (id === null) return true;
+  const x = a.annotations.find((annotation) => annotation.id === id);
+  const y = b.annotations.find((annotation) => annotation.id === id);
+  if (x === undefined || y === undefined) return x === y;
+  return sameSelectionControls(x, y);
 }

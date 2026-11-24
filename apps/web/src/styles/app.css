@@ -11,6 +11,14 @@
 /* ---------------------------------------------------------------------------
  * Fonts (self-hosted, OFL; licenses in /public/fonts).
  * The theme's role stack is `"Sidebar Inter", sans-serif`, so Inter registers under that alias.
+ * Inter stays one file: canvas text (image text annotations, exports) shapes and kerns across
+ * every glyph, and a split face changes that text's pixels (a combining mark or a kerning pair
+ * that straddles two files). JetBrains Mono is only UI text, so it is split in two with
+ * `unicode-range`, like Google Fonts does: `-primary` holds Latin, punctuation, arrows and the
+ * keycap symbols the UI uses, so Home downloads only that; `-rest` holds every other glyph and
+ * loads after first paint (App) or when such text shows. Same glyphs and features as the full
+ * font; made with fonttools' pyftsubset (`--layout-features='*'`, `--unicodes` set to each range
+ * below; the rest file takes every other code point the font has).
  */
 @font-face {
   font-family: "Sidebar Inter";
@@ -25,7 +33,22 @@
   font-style: normal;
   font-weight: 100 800;
   font-display: swap;
-  src: url("/fonts/JetBrainsMono.woff2") format("woff2");
+  src: url("/fonts/JetBrainsMono-rest.woff2") format("woff2");
+  unicode-range:
+    U+0180-0191, U+0193-02BA, U+02BD-02C5, U+02C7-02D9, U+02DB, U+02DD-02FF, U+0309-0328,
+    U+032A-1FFF, U+2070-20AB, U+20AD-2121, U+2123-218F, U+2200-2211, U+2213-2214, U+2216-2263,
+    U+2266-22FF, U+2400-FEFE, U+FF00-FFFC, U+FFFE-10FFFF;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("/fonts/JetBrainsMono-primary.woff2") format("woff2");
+  unicode-range:
+    U+0000-017F, U+0192, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0300-0308, U+0329, U+2000-206F,
+    U+20AC, U+2122, U+2190-21FF, U+2212, U+2215, U+2264-2265, U+2300-23FF, U+FEFF, U+FFFD;
 }
 
 /* ---------------------------------------------------------------------------

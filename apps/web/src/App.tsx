@@ -6,6 +6,7 @@ import {
   type MediaKind,
   type ToastTone,
 } from "@edit-here/core";
+import { domAnimation, LazyMotion } from "motion/react";
 import {
   lazy,
   Suspense,
@@ -19,10 +20,10 @@ import {
 import { DropOverlay, type DropIntent } from "./components/DropOverlay";
 import { DropzoneHome } from "./components/DropzoneHome";
 import { EditorErrorBoundary } from "./components/EditorErrorBoundary";
-import { GraphicalProvider, theme, Tooltip } from "./components/graphical/index";
 import { KeybindsDialog } from "./components/KeybindsDialog";
+import { GraphicalProvider, theme, Tooltip } from "./components/graphical/index";
 import { ShellHeader } from "./components/ShellHeader";
-import { StarPrompt } from "./components/StarPrompt";
+import { StarPromptHost } from "./components/StarPromptHost";
 import { ToastBar } from "./components/ToastBar";
 import type { EditorCommonProps, EditorToolbarActions, PersistSnapshot } from "./editors/types";
 import {
@@ -33,6 +34,8 @@ import {
 } from "./lib/analytics";
 import { detectPlatform, isEditableTarget } from "./lib/platform";
 import { useEditorActor } from "./lib/use-editor-actor";
+import { loadRemainingFonts } from "./lib/fonts";
+import { useIdle } from "./lib/when-idle";
 import { randomId } from "./lib/new-id";
 import {
   dismissStarPrompt,
@@ -141,6 +144,7 @@ export function App() {
   const [restore, setRestore] = useState<Restore | null>(null);
   const [recents, setRecents] = useState<readonly RecentWorkspace[]>([]);
   const [copied, setCopied] = useState(false);
+  const idle = useIdle();
   /** Files to add to a session once its editor is ready (the rest of a multi-file drop). */
   const pendingAppend = useRef<{
     readonly sessionId: string;
@@ -152,6 +156,10 @@ export function App() {
     () => (registered !== null && registered.sessionId === session?.id ? registered.actions : {}),
     [registered, session?.id],
   );
+
+  useEffect(() => {
+    if (idle) loadRemainingFonts();
+  }, [idle]);
 
   // --- color mode -------------------------------------------------------------------------
   useEffect(() => {
@@ -174,6 +182,8 @@ export function App() {
   // --- star prompt ------------------------------------------------------------------------
   // recordVisit counts a session once, so StrictMode running this initializer twice is safe.
   const [starEligible, setStarEligible] = useState(recordVisit);
+  // Mounted for the whole session once eligible, so dismissing still plays its exit animation.
+  const [starMounted] = useState(starEligible);
 
   const dismissStar = useCallback(() => {
     setStarEligible(false);
@@ -655,106 +665,113 @@ export function App() {
   }, [showHome]);
 
   return (
-    <GraphicalProvider document={theme} colorMode={colorMode}>
-      <Tooltip.Provider delay={350}>
-        <div className="app-root" data-state={String(snapshot.value)}>
-          <ShellHeader
-            meta={meta}
-            actions={actions}
-            exporting={exporting}
-            copied={copied}
-            colorMode={colorMode}
-            platform={platform}
-            onToggleColorMode={toggleColorMode}
-            onOpenFile={chooseFile}
-            onShowKeybinds={() => send({ type: "keybinds.open" })}
-            onCloseFile={closeFile}
-            onCopy={runCopy}
-            onExport={(format) => void runExport(format)}
-            onOpenGitHub={dismissStar}
-          />
+    // Buttons and the toast use Motion's `m` components. Their features are passed in here, not
+    // loaded later, so they animate from the first frame exactly as `motion` components would;
+    // `m` keeps drag and layout code (which only the editors use) off Home.
+    <LazyMotion features={domAnimation}>
+      <GraphicalProvider document={theme} colorMode={colorMode}>
+        <Tooltip.Provider delay={350}>
+          <div className="app-root" data-state={String(snapshot.value)}>
+            <ShellHeader
+              meta={meta}
+              actions={actions}
+              exporting={exporting}
+              copied={copied}
+              colorMode={colorMode}
+              platform={platform}
+              onToggleColorMode={toggleColorMode}
+              onOpenFile={chooseFile}
+              onShowKeybinds={() => send({ type: "keybinds.open" })}
+              onCloseFile={closeFile}
+              onCopy={runCopy}
+              onExport={(format) => void runExport(format)}
+              onOpenGitHub={dismissStar}
+            />
 
-          <StarPrompt
-            active={starEligible && boot === "ready"}
-            kind={meta?.kind ?? null}
-            onShown={onStarShown}
-            onStar={onStarClicked}
-            onDismiss={onStarDismissed}
-          />
-
-          <main className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
-            {meta !== null && sessionFile !== undefined ? (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <EditorErrorBoundary key={meta.id} onClose={closeFile}>
-                  <Suspense fallback={<EditorLoading />}>
-                    <EditorSlot
-                      file={sessionFile}
-                      meta={meta}
-                      onStatus={onStatus}
-                      onRegisterActions={onRegisterActions}
-                      onReplaceFile={openFile}
-                      colorMode={colorMode}
-                      onPersistState={onPersistState}
-                      onMediaError={onMediaError}
-                      {...(restoring
-                        ? { initialState: restore.state, initialExtraFiles: restore.extraFiles }
-                        : {})}
-                    />
-                  </Suspense>
-                </EditorErrorBoundary>
-              </div>
-            ) : boot !== "ready" ? (
-              // Reading the saved workspace takes a moment; an empty canvas avoids flashing home.
-              <div className="flex-1" aria-busy="true" />
-            ) : (
-              <DropzoneHome
-                platform={platform}
-                opening={detecting}
-                dragging={dragDepth > 0}
-                loadingSample={loadingSample}
-                error={error}
-                recents={recents}
-                onChooseFile={chooseFile}
-                onSample={(kind) => void openSample(kind)}
-                onOpenRecent={(id) => void openRecent(id)}
-                onDeleteRecent={deleteRecent}
-                onClearRecents={clearRecents}
-                onDismissError={() => send({ type: "error.dismiss" })}
+            {starMounted ? (
+              <StarPromptHost
+                active={starEligible && boot === "ready"}
+                kind={meta?.kind ?? null}
+                onShown={onStarShown}
+                onStar={onStarClicked}
+                onDismiss={onStarDismissed}
               />
-            )}
-          </main>
+            ) : null}
 
-          <KeybindsDialog
-            open={keybindsOpen}
-            activeKind={meta?.kind ?? null}
-            platform={platform}
-            onOpenChange={(open) => send({ type: open ? "keybinds.open" : "keybinds.close" })}
-          />
-          <ToastBar toast={toast} onDismiss={(id) => send({ type: "toast.dismiss", id })} />
-          <DropOverlay
-            visible={dragDepth > 0}
-            hasSession={meta !== null}
-            canAppend={actions.appendFiles !== undefined}
-            appendLabel={actions.appendLabel ?? "Add to file"}
-            appendDetail={actions.appendDetail ?? "Keep editing this file"}
-            onDropFiles={handleDroppedFiles}
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={FILE_INPUT_ACCEPT}
-            multiple
-            className="hidden"
-            tabIndex={-1}
-            aria-hidden="true"
-            onChange={(event) => {
-              const picked = Array.from(event.currentTarget.files ?? []);
-              event.currentTarget.value = "";
-              openFiles(picked);
-            }}
-          />
-        </div>
-      </Tooltip.Provider>
-    </GraphicalProvider>
+            <main className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
+              {meta !== null && sessionFile !== undefined ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <EditorErrorBoundary key={meta.id} onClose={closeFile}>
+                    <Suspense fallback={<EditorLoading />}>
+                      <EditorSlot
+                        file={sessionFile}
+                        meta={meta}
+                        onStatus={onStatus}
+                        onRegisterActions={onRegisterActions}
+                        onReplaceFile={openFile}
+                        colorMode={colorMode}
+                        onPersistState={onPersistState}
+                        onMediaError={onMediaError}
+                        {...(restoring
+                          ? { initialState: restore.state, initialExtraFiles: restore.extraFiles }
+                          : {})}
+                      />
+                    </Suspense>
+                  </EditorErrorBoundary>
+                </div>
+              ) : boot !== "ready" ? (
+                // Reading the saved workspace takes a moment; an empty canvas avoids flashing home.
+                <div className="flex-1" aria-busy="true" />
+              ) : (
+                <DropzoneHome
+                  platform={platform}
+                  opening={detecting}
+                  dragging={dragDepth > 0}
+                  loadingSample={loadingSample}
+                  error={error}
+                  recents={recents}
+                  onChooseFile={chooseFile}
+                  onSample={(kind) => void openSample(kind)}
+                  onOpenRecent={(id) => void openRecent(id)}
+                  onDeleteRecent={deleteRecent}
+                  onClearRecents={clearRecents}
+                  onDismissError={() => send({ type: "error.dismiss" })}
+                />
+              )}
+            </main>
+
+            <KeybindsDialog
+              open={keybindsOpen}
+              activeKind={meta?.kind ?? null}
+              platform={platform}
+              onOpenChange={(open) => send({ type: open ? "keybinds.open" : "keybinds.close" })}
+            />
+            <ToastBar toast={toast} onDismiss={(id) => send({ type: "toast.dismiss", id })} />
+            <DropOverlay
+              visible={dragDepth > 0}
+              hasSession={meta !== null}
+              canAppend={actions.appendFiles !== undefined}
+              appendLabel={actions.appendLabel ?? "Add to file"}
+              appendDetail={actions.appendDetail ?? "Keep editing this file"}
+              onDropFiles={handleDroppedFiles}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={FILE_INPUT_ACCEPT}
+              multiple
+              className="hidden"
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={(event) => {
+                const picked = Array.from(event.currentTarget.files ?? []);
+                event.currentTarget.value = "";
+                openFiles(picked);
+              }}
+            />
+          </div>
+        </Tooltip.Provider>
+      </GraphicalProvider>
+    </LazyMotion>
   );
 }

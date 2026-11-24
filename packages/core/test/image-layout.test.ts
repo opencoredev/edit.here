@@ -12,6 +12,8 @@ import {
   enterFrameTool,
   exportFileName,
   FULL_RECT,
+  baseImageShift,
+  imageLayoutsEqual,
   quarterTurns,
   redactionCellSize,
   redoImageState,
@@ -22,6 +24,7 @@ import {
   suggestedFrameSize,
   undoImageState,
   type FrameConfig,
+  type ImageGeometry,
 } from "../src/index";
 
 const SOURCE = { width: 6000, height: 4000 };
@@ -100,6 +103,100 @@ describe("computeImageLayout", () => {
         crop: { x: 0, y: 0, width: 0.5, height: 0.5 },
       }),
     ).toEqual({ width: 2000, height: 3000 });
+  });
+});
+
+/** A framed composition with one layer at `x` (view space) beside the base image. */
+function layerAt(x: number) {
+  return computeImageLayout({
+    source: SOURCE,
+    geometry: { crop: FULL_RECT, rotation: 0, flipX: false },
+    frame: FRAME_ON,
+    bounds: { x: 0, y: 0, width: 2, height: 1 },
+    pieces: [
+      { rect: FULL_RECT, radius: null },
+      { rect: { x, y: 0, width: 0.5, height: 0.5 }, radius: 0 },
+    ],
+  });
+}
+
+describe("imageLayoutsEqual", () => {
+  const geometry: ImageGeometry = { crop: FULL_RECT, rotation: 0, flipX: false };
+  it("matches layouts computed twice from the same inputs", () => {
+    const a = computeImageLayout({ source: SOURCE, geometry, frame: FRAME_ON, scale: 0.5 });
+    const b = computeImageLayout({ source: SOURCE, geometry, frame: FRAME_ON, scale: 0.5 });
+    expect(a).not.toBe(b);
+    expect(imageLayoutsEqual(a, b)).toBe(true);
+  });
+  it("tells apart layouts that place pixels differently", () => {
+    const a = computeImageLayout({ source: SOURCE, geometry, frame: FRAME_ON });
+    const padded = computeImageLayout({
+      source: SOURCE,
+      geometry,
+      frame: { ...FRAME_ON, padding: 65 },
+    });
+    const grown = computeImageLayout({
+      source: SOURCE,
+      geometry,
+      frame: FRAME_ON,
+      bounds: { x: 0, y: 0, width: 1.5, height: 1 },
+    });
+    const unframed = computeImageLayout({ source: SOURCE, geometry, frame: DEFAULT_FRAME_CONFIG });
+    expect(imageLayoutsEqual(a, padded)).toBe(false);
+    expect(imageLayoutsEqual(a, grown)).toBe(false);
+    expect(imageLayoutsEqual(a, unframed)).toBe(false);
+  });
+  it("compares the shadow shapes of an expanded composition", () => {
+    expect(imageLayoutsEqual(layerAt(1.5), layerAt(1.5))).toBe(true);
+    expect(imageLayoutsEqual(layerAt(1.5), layerAt(1.25))).toBe(false);
+  });
+});
+
+describe("baseImageShift", () => {
+  const geometry: ImageGeometry = { crop: FULL_RECT, rotation: 0, flipX: false };
+  const grownBy = (bounds: { x: number; y: number; width: number; height: number }) =>
+    computeImageLayout({
+      source: SOURCE,
+      geometry,
+      frame: DEFAULT_FRAME_CONFIG,
+      scale: 0.5,
+      bounds,
+    });
+
+  it("is the base image's move when only the composition around it changes", () => {
+    const base = grownBy({ x: 0, y: 0, width: 1, height: 1 });
+    expect(baseImageShift(base, base)).toEqual({ x: 0, y: 0 });
+    expect(baseImageShift(base, grownBy({ x: 0, y: 0, width: 1.5, height: 1 }))).toEqual({
+      x: 0,
+      y: 0,
+    });
+    expect(baseImageShift(base, grownBy({ x: -0.25, y: -0.5, width: 1.25, height: 1.5 }))).toEqual({
+      x: 750,
+      y: 1000,
+    });
+    expect(baseImageShift(grownBy({ x: -0.25, y: 0, width: 1.25, height: 1 }), base)).toEqual({
+      x: -750,
+      y: 0,
+    });
+  });
+
+  it("is null when the base image itself is drawn differently", () => {
+    const base = grownBy({ x: 0, y: 0, width: 1, height: 1 });
+    const cropped = computeImageLayout({
+      source: SOURCE,
+      geometry: { ...geometry, crop: { x: 0, y: 0, width: 0.5, height: 1 } },
+      frame: DEFAULT_FRAME_CONFIG,
+      scale: 0.5,
+    });
+    const smaller = computeImageLayout({
+      source: SOURCE,
+      geometry,
+      frame: DEFAULT_FRAME_CONFIG,
+      scale: 0.25,
+    });
+    expect(baseImageShift(base, cropped)).toBeNull();
+    expect(baseImageShift(base, smaller)).toBeNull();
+    expect(baseImageShift(base, { ...base, baseRadius: 6 })).toBeNull();
   });
 });
 

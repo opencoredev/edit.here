@@ -6,7 +6,7 @@ import {
   InformationCircleIcon,
 } from "@hugeicons/core-free-icons";
 import { Icon } from "./Icon";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
 
 const TONE_ICON = {
   info: InformationCircleIcon,
@@ -36,7 +36,7 @@ export function ToastBar({
     >
       <AnimatePresence initial={false}>
         {toast === null ? null : (
-          <motion.div
+          <m.div
             key={toast.id}
             role={toast.tone === "error" ? "alert" : "status"}
             initial={reduced === true ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.98 }}
@@ -59,7 +59,7 @@ export function ToastBar({
             >
               <Icon icon={Cancel01Icon} className="size-3.5" />
             </button>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

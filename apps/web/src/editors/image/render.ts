@@ -12,6 +12,7 @@
  * Geometry and sizing come from `@edit-here/core`; this file only issues canvas calls.
  */
 import {
+  annotationBounds,
   annotationFontSize,
   annotationLineWidth,
   annotationToView,
@@ -29,12 +30,14 @@ import {
   intersectRects,
   orientationMatrix,
   parseCanvasBackground,
+  planRedactionRepaint,
   redactionCellSize,
   resolveExportBackground,
   SAFE_CANVAS_PIXELS,
   scaleToFitArea,
   sourceRectToView,
   textAnnotationBox,
+  viewRectToCanvasPixels,
   type ExportBackground,
   type ImageAnnotation,
   type ImageDocumentState,
@@ -43,8 +46,11 @@ import {
   type ImageSize,
   type NormalizedPoint,
   type NormalizedRect,
+  type PixelOffset,
   type PixelRect,
   type RedactionBox,
+  type RedactionFootprint,
+  type RedactionRepaintPlan,
 } from "@edit-here/core";
 
 export type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
@@ -73,10 +79,14 @@ export function createCanvas(width: number, height: number): AnyCanvas {
   return canvas;
 }
 
+/** True for a page canvas; false for an OffscreenCanvas, including in a worker (no DOM there). */
+function isPageCanvas(canvas: AnyCanvas): canvas is HTMLCanvasElement {
+  return typeof HTMLCanvasElement !== "undefined" && canvas instanceof HTMLCanvasElement;
+}
+
 export function context2d(canvas: AnyCanvas): Ctx {
   // Both canvas types return their own 2D context type for "2d"; narrow by canvas type.
-  const ctx =
-    canvas instanceof HTMLCanvasElement ? canvas.getContext("2d") : canvas.getContext("2d");
+  const ctx = isPageCanvas(canvas) ? canvas.getContext("2d") : canvas.getContext("2d");
   if (ctx === null) {
     throw new Error("The browser could not allocate a canvas this large.");
   }
@@ -120,19 +130,22 @@ type RedactionPass = {
   readonly sourceSize: ImageSize;
 };
 
-/** Applies the redactions to the canvas, limited to `within` (view space) when given. */
-function applyRedactions(
-  ctx: Ctx,
-  canvas: AnyCanvas,
-  pass: RedactionPass,
-  within: NormalizedRect | null,
-): void {
+/** One redaction box placed on a render's canvas: its exact pixel rect and cell size. */
+type PlacedRedaction = {
+  readonly redaction: RedactionBox;
+  readonly px: PixelRect;
+  readonly cell: number;
+};
+
+/** Places the redactions on the canvas, limited to `within` (view space) when given. */
+function placeRedactions(pass: RedactionPass, within: NormalizedRect | null): PlacedRedaction[] {
   const base = baseRectInContent(pass.layout);
   const k = base.width / pass.layout.cropPixels.width;
   // Cell size follows the full image's long edge at this render's scale, so a preview and
   // the export blur and pixelate alike.
   const scaledLongEdge = Math.max(pass.sourceSize.width, pass.sourceSize.height) * k;
   const unit = { x: 0, y: 0, width: 1, height: 1 };
+  const placed: PlacedRedaction[] = [];
   for (const redaction of pass.redactions) {
     const onImage = intersectRects(sourceRectToView(redaction.rect, pass.geometry), unit);
     const view = onImage === null || within === null ? onImage : intersectRects(onImage, within);
@@ -140,14 +153,23 @@ function applyRedactions(
     const covered = coverPixels(view, { width: base.width, height: base.height });
     const px = { ...covered, x: covered.x + base.x, y: covered.y + base.y };
     if (px.width <= 0 || px.height <= 0) continue;
-    applyRedaction({
-      ctx,
-      canvas,
-      px,
+    placed.push({
       redaction,
+      px,
       cell: redactionCellSize({ intensity: redaction.intensity, imageLongEdge: scaledLongEdge }),
     });
   }
+  return placed;
+}
+
+/** Applies the redactions to the canvas, limited to `within` (view space) when given. */
+function applyRedactions(
+  ctx: Ctx,
+  canvas: AnyCanvas,
+  pass: RedactionPass,
+  within: NormalizedRect | null,
+): void {
+  for (const placed of placeRedactions(pass, within)) applyRedaction({ ctx, canvas, ...placed });
 }
 
 /**
@@ -192,6 +214,205 @@ export function renderImageCanvas(args: {
     });
   }
   return canvas;
+}
+
+// ---------------------------------------------------------------------------
+// Live preview: redactions repainted where they changed
+
+/**
+ * How far past its own rect a blur or pixelate box may read, in cells plus pixels. The spec lets
+ * a downsample filter read source pixels outside the source rect, and mipmapped sampling reaches
+ * a few texels (each at most a cell wide) past it; a sub-pixel rect reads one pixel more.
+ * Chromium's software canvas showed no reach at all, so this is a margin for other engines and
+ * GPUs. A wider reach only re-runs more neighbouring boxes; it never restores more pixels.
+ */
+const READ_REACH_CELLS = 4;
+const READ_REACH_PX = 4;
+
+function clampToCanvas(x0: number, y0: number, x1: number, y1: number, size: ImageSize): PixelRect {
+  const left = Math.max(0, Math.min(size.width, x0));
+  const top = Math.max(0, Math.min(size.height, y0));
+  const right = Math.max(left, Math.min(size.width, x1));
+  const bottom = Math.max(top, Math.min(size.height, y1));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+/** Which whole pixels a placed box writes and reads; equal keys mean identical results. */
+function redactionFootprint(placed: PlacedRedaction, size: ImageSize): RedactionFootprint {
+  const { px, cell, redaction } = placed;
+  const x0 = Math.floor(px.x);
+  const y0 = Math.floor(px.y);
+  const x1 = Math.ceil(px.x + px.width);
+  const y1 = Math.ceil(px.y + px.height);
+  const reach = redaction.style === "blackout" ? 0 : READ_REACH_CELLS * cell + READ_REACH_PX;
+  return {
+    key: `${redaction.style}|${cell}|${px.x},${px.y},${px.width},${px.height}`,
+    write: clampToCanvas(x0, y0, x1, y1, size),
+    read: clampToCanvas(x0 - reach, y0 - reach, x1 + reach, y1 + reach, size),
+  };
+}
+
+/** The inputs a redacted canvas was drawn from; equal inputs mean equal pixels. */
+type RedactedContent = {
+  readonly source: CanvasImageSource;
+  /** The base image's geometry and placement (see `render`). */
+  readonly baseKey: string;
+  readonly boxes: readonly RedactionFootprint[];
+};
+
+type RedactedBuffer = {
+  readonly canvas: AnyCanvas;
+  /** What the canvas holds, or null while it holds nothing usable. */
+  holds: RedactedContent | null;
+};
+
+function holdsExactly(buffer: RedactedBuffer, content: RedactedContent): boolean {
+  const { holds } = buffer;
+  return (
+    holds !== null &&
+    holds.source === content.source &&
+    holds.baseKey === content.baseKey &&
+    planRedactionRepaint({ previous: holds.boxes, next: content.boxes }).kind === "none"
+  );
+}
+
+export type RedactedCanvasCache = {
+  /**
+   * The same pixels as `renderImageCanvas` without annotations. Returns a canvas already holding
+   * exactly those pixels when there is one, and otherwise draws into a canvas that is neither
+   * the last one returned nor the retained one, so the result is a new object whenever its
+   * pixels differ from either.
+   */
+  readonly render: (args: {
+    source: CanvasImageSource;
+    sourceSize: ImageSize;
+    geometry: DocGeometry;
+    redactions: readonly RedactionBox[];
+    layout: ImageLayout;
+  }) => AnyCanvas;
+  /**
+   * Marks the canvas the screen now shows (call it from a layout effect with what the committed
+   * render got). Later calls never draw into it, so a render React throws away can't change the
+   * pixels of the one it keeps.
+   */
+  readonly retain: (canvas: AnyCanvas) => void;
+};
+
+/**
+ * The preview's redacted image. Keeps the unredacted base per geometry and a few canvases it
+ * reuses, so a box drawn or a strength dragged restores and re-runs only the boxes the change can
+ * reach, not the whole image and every blur.
+ *
+ * Calls come from render, which React may repeat or throw away. So each canvas records exactly
+ * what it holds, and the cache never draws into the canvas on screen (`retain`) or the one it
+ * returned last: at most three canvases, and two while every render commits.
+ */
+export function createRedactedCanvasCache(): RedactedCanvasCache {
+  let baseSource: CanvasImageSource | null = null;
+  let baseKey = "";
+  let base: AnyCanvas | null = null;
+  let buffers: RedactedBuffer[] = [];
+  // What the last call returned: the base itself when there were no boxes, else a buffer.
+  let last: AnyCanvas | null = null;
+  // What the committed render returned, as far as the last `retain` call said.
+  let retained: AnyCanvas | null = null;
+
+  return {
+    retain(canvas) {
+      retained = canvas;
+    },
+    render(args) {
+      const { layout, geometry, sourceSize } = args;
+      const rect = baseRectInContent(layout);
+      const key = JSON.stringify([
+        sourceSize.width,
+        sourceSize.height,
+        geometry.crop,
+        geometry.rotation,
+        geometry.flipX,
+        layout.content.width,
+        layout.content.height,
+        rect,
+        layout.cropPixels,
+        layout.baseRadius,
+      ]);
+      if (base === null || baseSource !== args.source || baseKey !== key) {
+        // A new canvas, never drawn into after this, so one handed out earlier keeps its pixels.
+        base = renderImageCanvas({ ...args, redactions: [] });
+        baseSource = args.source;
+        baseKey = key;
+        const fresh = base;
+        // Buffers of another size are dropped, not redrawn: one may still be on screen.
+        buffers = buffers.filter(
+          (b) => b.canvas.width === fresh.width && b.canvas.height === fresh.height,
+        );
+      }
+      const size = { width: base.width, height: base.height };
+      const pass: RedactionPass = { redactions: args.redactions, geometry, layout, sourceSize };
+      const placed = placeRedactions(pass, null);
+      const content: RedactedContent = {
+        source: args.source,
+        baseKey: key,
+        boxes: placed.map((p) => redactionFootprint(p, size)),
+      };
+      // Nothing to redact: the base is the result, and nothing ever draws on it.
+      if (content.boxes.length === 0) {
+        last = base;
+        return base;
+      }
+      const ready = buffers.find((b) => holdsExactly(b, content));
+      if (ready !== undefined) {
+        last = ready.canvas;
+        return ready.canvas;
+      }
+
+      let target = buffers.find((b) => b.canvas !== last && b.canvas !== retained);
+      if (target === undefined) {
+        target = { canvas: createCanvas(size.width, size.height), holds: null };
+        buffers.push(target);
+      }
+      const ctx = context2d(target.canvas);
+      const plan: RedactionRepaintPlan =
+        target.holds === null ||
+        target.holds.source !== content.source ||
+        target.holds.baseKey !== content.baseKey
+          ? { kind: "full" }
+          : planRedactionRepaint({ previous: target.holds.boxes, next: content.boxes });
+      switch (plan.kind) {
+        case "none":
+          break;
+        case "full":
+          ctx.clearRect(0, 0, size.width, size.height);
+          // A 1:1 copy; nearest sampling keeps it exact under any smoothing quality.
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(base, 0, 0);
+          ctx.imageSmoothingEnabled = true;
+          for (const p of placed) applyRedaction({ ctx, canvas: target.canvas, ...p });
+          break;
+        case "partial": {
+          // Rect by rect: cheaper than a clip path, and overlaps just copy the same pixels again.
+          ctx.imageSmoothingEnabled = false;
+          for (const r of plan.region) {
+            ctx.clearRect(r.x, r.y, r.width, r.height);
+            ctx.drawImage(base, r.x, r.y, r.width, r.height, r.x, r.y, r.width, r.height);
+          }
+          ctx.imageSmoothingEnabled = true;
+          for (const index of plan.reapply) {
+            const p = placed[index];
+            if (p !== undefined) applyRedaction({ ctx, canvas: target.canvas, ...p });
+          }
+          break;
+        }
+        default: {
+          const _exhaustive: never = plan;
+          return _exhaustive;
+        }
+      }
+      target.holds = content;
+      last = target.canvas;
+      return target.canvas;
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -381,6 +602,150 @@ export function drawAnnotations(args: {
   ctx.restore();
 }
 
+/**
+ * The pixels of the composition canvas that drawing `annotation` can touch, or null when none
+ * are on it. Generous by a couple of pixels so antialiased edges and arrowhead outlines fit.
+ */
+export function annotationPaintRect(args: {
+  annotation: ImageAnnotation;
+  geometry: DocGeometry;
+  sourceSize: ImageSize;
+  layout: ImageLayout;
+}): PixelRect | null {
+  const { annotation, geometry, sourceSize, layout } = args;
+  const base = baseRectInContent(layout);
+  const scale = base.width / layout.cropPixels.width;
+  const view = annotationBounds(annotation, {
+    source: sourceSize,
+    geometry,
+    view: { width: base.width, height: base.height },
+    measureText: measureAnnotationText,
+  });
+  switch (annotation.kind) {
+    case "image":
+      return viewRectToCanvasPixels({ view, base, margin: 2, size: layout.content });
+    case "text": {
+      // Glyphs can reach well past the layout box (stacked combining marks, swashes, fallback
+      // fonts), so the measured ink of each line joins it. The margin is a further allowance.
+      const fontSize = annotationFontSize(annotation, sourceSize, scale);
+      const ink = textInkRect({
+        text: annotation.text,
+        fontSize,
+        topLeft: { x: base.x + view.x * base.width, y: base.y + view.y * base.height },
+      });
+      if (ink === null) {
+        return { x: 0, y: 0, width: layout.content.width, height: layout.content.height };
+      }
+      const x0 = Math.min(view.x, (ink.x - base.x) / base.width);
+      const y0 = Math.min(view.y, (ink.y - base.y) / base.height);
+      const x1 = Math.max(view.x + view.width, (ink.x + ink.width - base.x) / base.width);
+      const y1 = Math.max(view.y + view.height, (ink.y + ink.height - base.y) / base.height);
+      return viewRectToCanvasPixels({
+        view: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 },
+        base,
+        margin: fontSize / 2 + 2,
+        size: layout.content,
+      });
+    }
+    case "pen":
+    case "highlighter":
+    case "arrow":
+    case "rectangle": {
+      // `annotationBounds` already holds half the stroke and the arrowhead; this adds another half.
+      const reach = annotationLineWidth(annotation, sourceSize, scale) / 2;
+      return viewRectToCanvasPixels({ view, base, margin: reach + 2, size: layout.content });
+    }
+    default: {
+      const _exhaustive: never = annotation;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * The ink of a text annotation drawn with its first line's top-left at `topLeft`, as
+ * `drawAnnotations` draws it, in canvas pixels. Null when the browser can't measure ink.
+ */
+function textInkRect(args: {
+  text: string;
+  fontSize: number;
+  topLeft: { readonly x: number; readonly y: number };
+}): PixelRect | null {
+  const { fontSize, topLeft } = args;
+  measureContext ??= context2d(createCanvas(1, 1));
+  const ctx = measureContext;
+  ctx.font = textFont(fontSize);
+  ctx.textBaseline = "top";
+  let x0 = Number.POSITIVE_INFINITY;
+  let y0 = Number.POSITIVE_INFINITY;
+  let x1 = Number.NEGATIVE_INFINITY;
+  let y1 = Number.NEGATIVE_INFINITY;
+  const lines = args.text.split("\n");
+  for (const [index, line] of lines.entries()) {
+    const m = ctx.measureText(line);
+    const left = m.actualBoundingBoxLeft;
+    const right = m.actualBoundingBoxRight;
+    const ascent = m.actualBoundingBoxAscent;
+    const descent = m.actualBoundingBoxDescent;
+    if (![left, right, ascent, descent].every(Number.isFinite)) return null;
+    const top = topLeft.y + index * fontSize * TEXT_LINE_HEIGHT;
+    x0 = Math.min(x0, topLeft.x - left);
+    x1 = Math.max(x1, topLeft.x + right);
+    y0 = Math.min(y0, top - ascent);
+    y1 = Math.max(y1, top + descent);
+  }
+  if (!(x1 >= x0 && y1 >= y0)) return null;
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
+/**
+ * Paints `under` (a composition canvas, its origin at `underAt`) and then `annotations` over it
+ * onto the top-left `size` of `canvas`, only inside `region` when given. What lands inside the
+ * region is exactly what a full repaint would put there.
+ */
+export function paintComposition(args: {
+  ctx: Ctx;
+  canvas: AnyCanvas;
+  size: ImageSize;
+  under: AnyCanvas;
+  underAt: PixelOffset;
+  region: PixelRect | null;
+  annotations: readonly ImageAnnotation[];
+  geometry: DocGeometry;
+  sourceSize: ImageSize;
+  layout: ImageLayout;
+  layers: LayerSources;
+  redactions: readonly RedactionBox[];
+}): void {
+  const { ctx, canvas, under, underAt } = args;
+  const r = args.region ?? { x: 0, y: 0, width: args.size.width, height: args.size.height };
+  ctx.save();
+  if (args.region !== null) {
+    ctx.beginPath();
+    ctx.rect(r.x, r.y, r.width, r.height);
+    ctx.clip();
+  }
+  ctx.clearRect(r.x, r.y, r.width, r.height);
+  if (underAt.x === 0 && underAt.y === 0) {
+    ctx.drawImage(under, r.x, r.y, r.width, r.height, r.x, r.y, r.width, r.height);
+  } else {
+    ctx.drawImage(under, underAt.x, underAt.y);
+  }
+  if (args.annotations.length > 0) {
+    drawAnnotations({
+      ctx,
+      canvas,
+      annotations: args.annotations,
+      geometry: args.geometry,
+      sourceSize: args.sourceSize,
+      layout: args.layout,
+      layers: args.layers,
+      redactions: args.redactions,
+    });
+  }
+  ctx.restore();
+}
+
 function applyRedaction(args: {
   ctx: Ctx;
   canvas: AnyCanvas;
@@ -540,7 +905,7 @@ async function canvasToBlob(
   type: ImageExportFormat,
   quality: number | undefined,
 ): Promise<Blob> {
-  if (canvas instanceof HTMLCanvasElement) {
+  if (isPageCanvas(canvas)) {
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
     if (blob === null) throw new Error("The browser could not encode the image.");
     return blob;

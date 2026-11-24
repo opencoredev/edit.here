@@ -16,7 +16,6 @@ import {
   flipGeometryX,
   FULL_RECT,
   applyAnnotationStyle,
-  imageCompositionBounds,
   imageLayerCrop,
   imageLayerCropPixels,
   imageLayers,
@@ -54,7 +53,15 @@ import {
 } from "@edit-here/core";
 import { AlertCircleIcon } from "@hugeicons/core-free-icons";
 import { Icon } from "../../components/Icon";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { randomId } from "../../lib/new-id";
 import { detectPlatform, isEditableTarget } from "../../lib/platform";
 import { usePersist } from "../../lib/use-persist";
@@ -63,6 +70,7 @@ import { aspectFits, turnAspect, type AspectPreset } from "./aspect";
 import { CropStage } from "./CropStage";
 import { EditorFrame } from "../../components/EditorFrame";
 import { AnnotationOverlay } from "./AnnotationOverlay";
+import { createCanvasDraftStore } from "./canvas-draft";
 import {
   hasImageOptions,
   ImageOptions,
@@ -72,8 +80,9 @@ import {
 } from "./ImageDock";
 import { PreviewStage } from "./PreviewStage";
 import { RedactionOverlay } from "./RedactionOverlay";
-import { exportImageBlob, renderThumbnailCanvas, type LayerSources } from "./render";
-import { encodeThumbnail, THUMBNAIL_EDGE } from "../../lib/thumbnail";
+import { exportImage, warmExportWorker } from "./export-client";
+import { renderThumbnailCanvas, type LayerSources } from "./render";
+import { encodeThumbnailCanvas, THUMBNAIL_EDGE } from "../../lib/thumbnail";
 import type { StageViewportController } from "./use-stage-viewport";
 import {
   closeDecodedImage,
@@ -258,8 +267,10 @@ function ImageWorkspace({
     return restored === null ? createImageHistory(image.size) : createHistory(restored);
   });
   const [draft, setDraft] = useState<ImageDocumentState | null>(null);
-  // True while a drag on the canvas is drafting; the stage then holds its scale steady.
-  const [canvasDrag, setCanvasDrag] = useState(false);
+  // Gestures on the canvas draft outside React state; the editor and its controls follow only
+  // the changes the controls show.
+  const [canvasDraft] = useState(createCanvasDraftStore);
+  const controlsDraft = useSyncExternalStore(canvasDraft.subscribe, canvasDraft.getControls);
   const [liveCrop, setLiveCrop] = useState<ImageGeometry | null>(null);
   const [aspect, setAspect] = useState<AspectPreset>("free");
   const [cropTarget, setCropTarget] = useState<CropTarget>(BASE_TARGET);
@@ -275,7 +286,7 @@ function ImageWorkspace({
   const { assets, add: addAsset } = useLayerAssets(initialExtraFiles, reportError);
 
   const present = history.present;
-  const shown = draft ?? present;
+  const shown = draft ?? controlsDraft ?? present;
 
   const update = useCallback(
     (fn: (state: ImageDocumentState) => ImageDocumentState) =>
@@ -302,6 +313,7 @@ function ImageWorkspace({
   const setTool = useCallback(
     (tool: ImageTool) => {
       setDraft(null);
+      canvasDraft.set(null);
       const before = historyRef.current.present;
       if (tool === "crop" && before.tool !== "crop") {
         // Crop what is selected: a picture on the canvas, or else the base image.
@@ -318,7 +330,7 @@ function ImageWorkspace({
       }
       update((s) => selectImageTool(s, tool));
     },
-    [update, chooseCropTarget],
+    [update, chooseCropTarget, canvasDraft],
   );
 
   const rotate = useCallback(() => {
@@ -435,13 +447,14 @@ function ImageWorkspace({
   const travel = useCallback(
     (step: (h: ImageHistory) => ImageHistory) => {
       setDraft(null);
+      canvasDraft.set(null);
       const next = step(historyRef.current);
       historyRef.current = next;
       setHistory(next);
       const size = croppedPixelSize(image.size, next.present);
       setAspect((current) => (aspectFits(current, size) ? current : "free"));
     },
-    [image.size],
+    [image.size, canvasDraft],
   );
   const undo = useCallback(() => travel(undoImageState), [travel]);
   const redo = useCallback(() => travel(redoImageState), [travel]);
@@ -463,6 +476,7 @@ function ImageWorkspace({
           continue;
         }
         setDraft(null);
+        canvasDraft.set(null);
         update((s) =>
           placeImageLayer({
             state: s,
@@ -483,7 +497,7 @@ function ImageWorkspace({
         );
       }
     },
-    [addAsset, image.size, onStatus, update],
+    [addAsset, image.size, onStatus, update, canvasDraft],
   );
   const chooseImages = useCallback(() => pickerRef.current?.click(), []);
 
@@ -498,9 +512,9 @@ function ImageWorkspace({
 
   // --- persistence ----------------------------------------------------------------------------
   /**
-   * A thumbnail of `state` as it would export, for Home's recent list. Drawn right away, while
-   * the bitmaps are open; when they are already closed (the editor is closing) there is none and
-   * the saved one stays.
+   * A thumbnail of `state` as it would export, for Home's recent list. Drawn and read back right
+   * away, while the bitmaps are open, then encoded off the main thread; when they are already
+   * closed (the editor is closing) there is none and the saved one stays.
    */
   const thumbnailOf = useCallback(
     (state: ImageDocumentState): Promise<string | null> | undefined => {
@@ -512,7 +526,7 @@ function ImageWorkspace({
           layers: previewLayers,
           edge: THUMBNAIL_EDGE,
         });
-        return Promise.resolve(encodeThumbnail(canvas, canvas.width, canvas.height));
+        return encodeThumbnailCanvas(canvas);
       } catch {
         return undefined;
       }
@@ -544,6 +558,16 @@ function ImageWorkspace({
   );
 
   // --- export and copy ----------------------------------------------------------------------
+  // Load the export worker once the editor is up, so the first Copy or Export doesn't wait for it.
+  useEffect(() => {
+    if (typeof requestIdleCallback === "undefined") {
+      const timer = setTimeout(warmExportWorker, 1000);
+      return () => clearTimeout(timer);
+    }
+    const handle = requestIdleCallback(warmExportWorker, { timeout: 2000 });
+    return () => cancelIdleCallback(handle);
+  }, []);
+
   const presentRef = useRef(present);
   useLayoutEffect(() => {
     presentRef.current = present;
@@ -555,7 +579,7 @@ function ImageWorkspace({
       // A format picked from the menu exports now, before the state's own format catches up.
       const format =
         IMAGE_EXPORT_FORMATS.find((f) => f.format === requested)?.format ?? state.exportFormat;
-      const blob = await exportImageBlob({
+      const blob = await exportImage({
         source: image.full,
         sourceSize: image.size,
         state,
@@ -574,7 +598,7 @@ function ImageWorkspace({
       return Promise.reject(new Error("Clipboard images are not supported."));
     }
     // Hand the clipboard a promise right away so Safari keeps the user gesture.
-    const png = exportImageBlob({
+    const png = exportImage({
       source: image.full,
       sourceSize: image.size,
       state: presentRef.current,
@@ -878,11 +902,6 @@ function ImageWorkspace({
     [update],
   );
 
-  const onCanvasDraft = useCallback((next: ImageDocumentState | null) => {
-    setDraft(next);
-    setCanvasDrag(next !== null);
-  }, []);
-
   // --- crop target ----------------------------------------------------------------------------
   // The picture being cropped, while it is still on the canvas and decoded; else the base.
   const cropLayer = useMemo(() => {
@@ -1012,8 +1031,7 @@ function ImageWorkspace({
             source={image.size}
             base={present}
             shown={shown}
-            bounds={imageCompositionBounds(shown.annotations, shown)}
-            onDraft={onCanvasDraft}
+            draft={canvasDraft}
             onCommit={(next) => update(() => next)}
             onSelect={selectAnnotation}
             onEmptyPress={(event) => viewportRef.current?.panFromPress(event) ?? false}
@@ -1059,9 +1077,9 @@ function ImageWorkspace({
         ) : (
           <PreviewStage
             image={image}
-            state={shown}
+            state={draft ?? present}
+            canvasDraft={canvasDraft}
             layers={previewLayers}
-            fitState={canvasDrag ? present : null}
             label={`Edited ${file.name}`}
             overlay={overlay}
             platform={platform}

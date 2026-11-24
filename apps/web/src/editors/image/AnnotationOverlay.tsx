@@ -5,6 +5,7 @@ import {
   annotationFontSize,
   annotationHandles,
   annotationToSource,
+  imageCompositionBounds,
   isUsableAnnotation,
   moveAnnotation,
   rectFromPoints,
@@ -22,10 +23,16 @@ import {
   type ImageDocumentState,
   type ImageSize,
   type NormalizedPoint,
-  type NormalizedRect,
 } from "@edit-here/core";
-import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { randomId } from "../../lib/new-id";
+import type { CanvasDraftStore } from "./canvas-draft";
 import { measureAnnotationText } from "./render";
 
 type Gesture =
@@ -82,14 +89,10 @@ type AnnotationOverlayProps = {
   source: ImageSize;
   /** The committed state; gestures start from it. */
   base: ImageDocumentState;
-  /** What is on screen (the draft while dragging). */
+  /** What is on screen outside a gesture of this overlay. */
   shown: ImageDocumentState;
-  /**
-   * The composition in view space. Presses anywhere on it reach the overlay, so a layer beside
-   * the base image can be picked and dragged.
-   */
-  bounds: NormalizedRect;
-  onDraft: (draft: ImageDocumentState | null) => void;
+  /** Where this overlay's gestures publish their drafts; select mode follows them live. */
+  draft: CanvasDraftStore;
   onCommit: (next: ImageDocumentState) => void;
   onSelect: (id: string | null) => void;
   /**
@@ -111,6 +114,8 @@ const CURSOR: Readonly<Record<AnnotationOverlayProps["tool"], string>> = {
 /** An outline width or offset that stays the same on screen at any stage zoom. */
 const unzoomedPx = (px: number): string => `calc(${px}px / var(--stage-zoom, 1))`;
 
+const noDraft = (): ImageDocumentState | null => null;
+
 function pct(value: number): string {
   return `${value * 100}%`;
 }
@@ -123,9 +128,8 @@ export function AnnotationOverlay({
   tool,
   source,
   base,
-  shown,
-  bounds,
-  onDraft,
+  shown: shownOutside,
+  draft,
   onCommit,
   onSelect,
   onEmptyPress,
@@ -138,6 +142,12 @@ export function AnnotationOverlay({
   const [textEdit, setTextEdit] = useState<TextEdit | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [surfaceSize, setSurfaceSize] = useState<ImageSize>({ width: 0, height: 0 });
+  // Only select mode shows the moving selection; drawing tools never re-render per move.
+  const live = useSyncExternalStore(draft.subscribe, tool === "select" ? draft.get : noDraft);
+  const shown = live ?? shownOutside;
+  // The composition in view space. Presses anywhere on it reach the overlay, so a layer beside
+  // the base image can be picked and dragged.
+  const bounds = imageCompositionBounds(shown.annotations, shown);
 
   useLayoutEffect(() => {
     const el = surfaceRef.current;
@@ -193,9 +203,9 @@ export function AnnotationOverlay({
     };
   };
 
-  const setDraft = (draft: ImageDocumentState | null) => {
-    draftRef.current = draft;
-    onDraft(draft);
+  const setDraft = (next: ImageDocumentState | null) => {
+    draftRef.current = next;
+    draft.set(next);
   };
 
   const style = base.annotationStyle;
@@ -384,11 +394,11 @@ export function AnnotationOverlay({
     const gesture = gestureRef.current;
     if (gesture === null || gesture.pointerId !== event.pointerId) return;
     gestureRef.current = null;
-    const draft = draftRef.current;
+    const drafted = draftRef.current;
     draftRef.current = null;
-    onDraft(null);
+    draft.set(null);
     if (gesture.kind === "move" || gesture.kind === "resize") {
-      if (draft !== null) onCommit(draft);
+      if (drafted !== null) onCommit(drafted);
       return;
     }
     const drawn = draftAnnotation(gesture, toView(event));
