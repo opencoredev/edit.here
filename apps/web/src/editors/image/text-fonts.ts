@@ -32,12 +32,31 @@ export function textFontGeneration(): number {
 /** A size and weight of the canvas text font, for `document.fonts` checks and loads. */
 const TEXT_FONT_PROBE = `600 16px "${TEXT_FONT_FACES[0].family}"`;
 
-/** Resolves once the canvas text font has loaded or failed to. */
-export function textFontReady(): Promise<void> {
-  return document.fonts.load(TEXT_FONT_PROBE).then(
+let settled = false;
+let ready: Promise<void> = Promise.resolve();
+
+if (typeof document !== "undefined") {
+  ready = document.fonts.load(TEXT_FONT_PROBE).then(
     () => undefined,
     () => undefined,
   );
+  void ready.then(() => {
+    settled = true;
+    for (const listener of listeners) listener();
+  });
+}
+
+/** Resolves once the canvas text font has loaded or failed to. */
+export function textFontReady(): Promise<void> {
+  return ready;
+}
+
+/**
+ * Whether the canvas text font has loaded or failed to; a `useSyncExternalStore` snapshot.
+ * Text placement measures in that font, so it waits for this.
+ */
+export function textFontSettled(): boolean {
+  return settled;
 }
 
 export function subscribeTextFonts(listener: () => void): () => void {
