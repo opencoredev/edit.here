@@ -127,13 +127,23 @@ type RedactionPass = {
   readonly geometry: DocGeometry;
   readonly layout: ImageLayout;
   readonly sourceSize: ImageSize;
+  /**
+   * Ids of the blur boxes a gesture is drawing or moving, which skip the final soften pass (see
+   * `applyRedaction`). Exports and the stage at rest pass none.
+   */
+  readonly drafts: ReadonlySet<string>;
 };
+
+/** No boxes drawn at draft quality. */
+export const NO_DRAFTS: ReadonlySet<string> = new Set();
 
 /** One redaction box placed on a render's canvas: its exact pixel rect and cell size. */
 type PlacedRedaction = {
   readonly redaction: RedactionBox;
   readonly px: PixelRect;
   readonly cell: number;
+  /** A blur drawn without its soften pass, while a gesture moves it. */
+  readonly draft: boolean;
 };
 
 /** Places the redactions on the canvas, limited to `within` (view space) when given. */
@@ -156,6 +166,7 @@ function placeRedactions(pass: RedactionPass, within: NormalizedRect | null): Pl
       redaction,
       px,
       cell: redactionCellSize({ intensity: redaction.intensity, imageLongEdge: scaledLongEdge }),
+      draft: redaction.style === "blur" && pass.drafts.has(redaction.id),
     });
   }
   return placed;
@@ -198,7 +209,13 @@ export function renderImageCanvas(args: {
   ctx.drawImage(args.source, 0, 0, sourceSize.width, sourceSize.height);
   ctx.restore();
 
-  const pass: RedactionPass = { redactions: args.redactions, geometry, layout, sourceSize };
+  const pass: RedactionPass = {
+    redactions: args.redactions,
+    geometry,
+    layout,
+    sourceSize,
+    drafts: NO_DRAFTS,
+  };
   applyRedactions(ctx, canvas, pass, null);
   if (args.annotations !== undefined && args.annotations.length > 0) {
     drawAnnotations({
@@ -238,14 +255,14 @@ function clampToCanvas(x0: number, y0: number, x1: number, y1: number, size: Ima
 
 /** Which whole pixels a placed box writes and reads; equal keys mean identical results. */
 function redactionFootprint(placed: PlacedRedaction, size: ImageSize): RedactionFootprint {
-  const { px, cell, redaction } = placed;
+  const { px, cell, redaction, draft } = placed;
   const x0 = Math.floor(px.x);
   const y0 = Math.floor(px.y);
   const x1 = Math.ceil(px.x + px.width);
   const y1 = Math.ceil(px.y + px.height);
   const reach = redaction.style === "blackout" ? 0 : READ_REACH_CELLS * cell + READ_REACH_PX;
   return {
-    key: `${redaction.style}|${cell}|${px.x},${px.y},${px.width},${px.height}`,
+    key: `${redaction.style}|${draft ? "draft" : "exact"}|${cell}|${px.x},${px.y},${px.width},${px.height}`,
     write: clampToCanvas(x0, y0, x1, y1, size),
     read: clampToCanvas(x0 - reach, y0 - reach, x1 + reach, y1 + reach, size),
   };
@@ -275,6 +292,20 @@ function holdsExactly(buffer: RedactedBuffer, content: RedactedContent): boolean
   );
 }
 
+/**
+ * Each placed box's footprint on a composition of `layout`, as `createRedactedCanvasCache`
+ * records them: equal lists mean equal redacted pixels.
+ */
+export function redactionFootprints(args: {
+  redactions: readonly RedactionBox[];
+  geometry: DocGeometry;
+  layout: ImageLayout;
+  sourceSize: ImageSize;
+  drafts: ReadonlySet<string>;
+}): RedactionFootprint[] {
+  return placeRedactions(args, null).map((p) => redactionFootprint(p, args.layout.content));
+}
+
 export type RedactedCanvasCache = {
   /**
    * The same pixels as `renderImageCanvas` without annotations. Returns a canvas already holding
@@ -288,6 +319,7 @@ export type RedactedCanvasCache = {
     geometry: DocGeometry;
     redactions: readonly RedactionBox[];
     layout: ImageLayout;
+    drafts: ReadonlySet<string>;
   }) => AnyCanvas;
   /**
    * Marks the canvas the screen now shows (call it from a layout effect with what the committed
@@ -347,7 +379,13 @@ export function createRedactedCanvasCache(): RedactedCanvasCache {
         );
       }
       const size = { width: base.width, height: base.height };
-      const pass: RedactionPass = { redactions: args.redactions, geometry, layout, sourceSize };
+      const pass: RedactionPass = {
+        redactions: args.redactions,
+        geometry,
+        layout,
+        sourceSize,
+        drafts: args.drafts,
+      };
       const placed = placeRedactions(pass, null);
       const content: RedactedContent = {
         source: args.source,
@@ -516,7 +554,7 @@ export function drawAnnotations(args: {
       applyRedactions(
         ctx,
         args.canvas,
-        { redactions: args.redactions, geometry, layout, sourceSize },
+        { redactions: args.redactions, geometry, layout, sourceSize, drafts: NO_DRAFTS },
         sourceRectToView(annotation.rect, geometry),
       );
       continue;
@@ -751,8 +789,9 @@ function applyRedaction(args: {
   px: PixelRect;
   redaction: RedactionBox;
   cell: number;
+  draft: boolean;
 }): void {
-  const { ctx, canvas, px, redaction, cell } = args;
+  const { ctx, canvas, px, redaction, cell, draft } = args;
   switch (redaction.style) {
     case "blackout":
       ctx.fillStyle = BLACKOUT;
@@ -790,7 +829,8 @@ function applyRedaction(args: {
           (cols + 1) * cell,
           (rows + 1) * cell,
         );
-        if ("filter" in ctx) {
+        // The soften pass is most of a blur's cost; a draft shows the upscaled cells alone.
+        if (!draft && "filter" in ctx) {
           const soft = createCanvas(px.width, px.height);
           context2d(soft).drawImage(
             canvas,
