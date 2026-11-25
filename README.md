@@ -11,7 +11,7 @@ Use it at [edit.here](https://edit.here/).
 ## Features
 
 - **Images** (PNG, JPG, WebP, GIF, AVIF, BMP): crop, rotate and flip, draw (pen, highlighter, arrows, boxes, text), redact with blackout, blur or pixelate, add more pictures to the canvas, and frame the result with padding, rounded corners, a shadow and a background. Export as PNG, JPEG or WebP, or copy to the clipboard.
-- **Videos** (MP4, WebM, MOV, MKV, M4V): trim and split, delete segments, crop, rotate and flip, change speed and volume per clip, add fades in and out, and export.
+- **Videos** (MP4, WebM, MOV, MKV, M4V, depending on the codecs your browser supports): trim and split, delete segments, crop, rotate and flip, change speed and volume per clip, add fades in and out, and export.
 - **Works offline**: after the first visit the whole app is cached, so it opens without a connection.
 - **Picks up where you left off**: recent work is kept in your browser's IndexedDB.
 
@@ -23,7 +23,7 @@ Press `?` in the app for the full list. The common ones (`Mod` is Cmd on macOS, 
 | ----------------------- | ---------------------------------------------------------------------------------- |
 | `Mod+Z` / `Mod+Shift+Z` | Undo / redo                                                                        |
 | `Mod+E`                 | Export                                                                             |
-| `Mod+C`                 | Copy the result to the clipboard                                                   |
+| `Mod+C`                 | Copy the edited image or the current video frame                                   |
 | `1`–`9`                 | Image tools: select, pen, highlighter, arrow, rectangle, text, redact, crop, frame |
 | `Space`                 | Play or pause a video                                                              |
 | `s` / `x`               | Split at the playhead / cut a segment                                              |
@@ -32,11 +32,11 @@ Press `?` in the app for the full list. The common ones (`Mod` is Cmd on macOS, 
 
 ## Privacy
 
-Files are opened, edited and exported on your device and never sent anywhere. There is no account. The production site counts anonymous page views and errors without cookies, never sends file names, file contents or anything you type, and skips analytics entirely when Global Privacy Control or Do Not Track is on. Self-hosted builds send nothing.
+Files are opened, edited and exported on your device and never sent anywhere. There is no account. The production site uses [Databuddy](https://www.databuddy.cc/), a cookieless analytics tool, to record page views, Web Vitals, which features are used, and fixed error codes. It never sends file names, file contents or anything you type, and it does not load at all when Global Privacy Control or Do Not Track is on. Self-hosted builds send nothing.
 
 ## Run it yourself
 
-Requires Node 22 or newer and pnpm 10.
+Requires Node 22.12 or newer and pnpm 10.
 
 ```sh
 git clone https://github.com/opencoredev/edit.here.git

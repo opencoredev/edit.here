@@ -195,7 +195,6 @@ function SampleCard({
       type="button"
       onClick={onOpen}
       disabled={disabled}
-      aria-label={`Open sample ${sample.title}: ${sample.actions.replaceAll(" · ", ", ")}`}
       aria-busy={loading || undefined}
       className="sample-pill group flex w-full items-center gap-2.5 rounded-md py-2 pr-2.5 pl-2 text-start focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-default"
     >
@@ -206,6 +205,7 @@ function SampleCard({
         <Icon icon={sample.glyph} className="size-4" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
+        <span className="sr-only">Open sample </span>
         <span className="text-sm leading-5 font-medium text-ink">{sample.title}</span>
         <span className="truncate text-xs leading-4 text-ink-muted">{sample.actions}</span>
       </span>

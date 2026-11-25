@@ -2,18 +2,15 @@
 
 > edit.here is a free image and video editor that runs entirely in the browser. Files are opened, edited and exported on the visitor's own device and are never uploaded to a server. After the first visit it also works offline.
 
-## What it does
+Images (PNG, JPG, WebP, GIF, AVIF, BMP): crop, rotate and flip; draw with a pen, highlighter, arrows, boxes and text; redact with blackout, blur or pixelate; add more pictures to the canvas; frame the result with padding, rounded corners, a shadow and a background. Export as PNG, JPEG or WebP, or copy to the clipboard.
 
-- Images (PNG, JPG, WebP, GIF, AVIF, BMP): crop, rotate and flip; draw with a pen, highlighter, arrows, boxes and text; redact with blackout, blur or pixelate; add more pictures to the canvas; frame the result with padding, rounded corners, a shadow and a background. Export as PNG, JPEG or WebP, or copy to the clipboard.
-- Videos (MP4, WebM, MOV, MKV, M4V): trim and split, delete segments, crop, rotate and flip, change speed and volume per clip, add fades, and export.
-- Recent work is kept in the browser's IndexedDB, so a reload picks up where you left off.
-- Keyboard shortcuts for every tool; press ? in the app to list them.
+Videos (MP4, WebM, MOV, MKV, M4V, depending on the codecs the browser supports): trim and split, delete segments, crop, rotate and flip, change speed and volume per clip, add fades, and export.
 
-## Privacy
+Recent work is kept in the browser's IndexedDB, so a reload picks up where you left off. Every tool has a keyboard shortcut; press ? in the app to list them.
 
-Editing happens on the device. Images and videos are never uploaded, and no account is needed. The site collects only anonymous, cookieless usage counts.
+Privacy: editing happens on the device, files are never uploaded, and no account is needed. The production site uses cookieless analytics (Databuddy) for page views, Web Vitals, feature usage events and fixed error codes. It never sends file names, file contents or typed text, and it does not load when Global Privacy Control or Do Not Track is on.
 
 ## Links
 
-- App: https://edit.here/
-- Source code (MIT): https://github.com/opencoredev/edit.here
+- [edit.here](https://edit.here/): the editor itself
+- [Source code](https://github.com/opencoredev/edit.here): MIT-licensed, with build and self-hosting instructions in the README
