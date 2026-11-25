@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { Slider, Switch, Toggle, ToggleGroup } from "../../components/graphical/index";
 
 /** Single-choice segmented control on the themed ToggleGroup. Never ends up empty. */
@@ -85,8 +85,12 @@ export function LabeledSwitch({
   );
 }
 
-/** One-line slider for the options tray: label, track, value. `onCommit` fires when the drag ends. */
-export function InlineSlider({
+/**
+ * One-line slider for the options tray: label, track, value. `onCommit` fires when the drag ends.
+ * Memoized, so a tray with several sliders re-renders only the one being dragged when its
+ * handlers are stable.
+ */
+export const InlineSlider = memo(function InlineSlider({
   label,
   value,
   min,
@@ -146,4 +150,4 @@ export function InlineSlider({
       </span>
     </Slider.Root>
   );
-}
+});

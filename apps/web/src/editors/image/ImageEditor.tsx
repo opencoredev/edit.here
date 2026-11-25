@@ -351,6 +351,10 @@ function ImageWorkspace({
     () => update((s) => ({ ...s, transparent: !s.transparent })),
     [update],
   );
+  const setTransparent = useCallback(
+    (transparent: boolean) => update((s) => ({ ...s, transparent })),
+    [update],
+  );
   /** Deletes the selected drawing or picture in select mode, or the selected box in redact. */
   const deleteSelected = useCallback(() => {
     update((s) => {
@@ -1007,7 +1011,7 @@ function ImageWorkspace({
     onAddImage: chooseImages,
     onAnnotationStyle,
     onFrame,
-    onTransparent: (transparent: boolean) => update((s) => ({ ...s, transparent })),
+    onTransparent: setTransparent,
     cropTargets,
     cropTarget: cropLayerId ?? BASE_TARGET_VALUE,
     onCropTarget,
@@ -1057,7 +1061,17 @@ function ImageWorkspace({
 
   return (
     <EditorFrame
-      bar={<ImageToolBar {...dockProps} />}
+      bar={
+        <ImageToolBar
+          tool={shown.tool}
+          platform={platform}
+          onTool={setTool}
+          onAddImage={chooseImages}
+          onRotate={rotate}
+          onFlip={flip}
+          onReset={reset}
+        />
+      }
       tray={hasImageOptions(shown) ? <ImageOptions {...dockProps} /> : null}
       trayLabel={imageOptionsLabel(shown.tool)}
     >
