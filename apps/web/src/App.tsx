@@ -79,9 +79,13 @@ const SAMPLE_FACTORIES: Record<MediaKind, () => Promise<File>> = {
   video: () => import("./lib/sample-generators").then((m) => m.createSampleVideoFile()),
 };
 
-// Each editor is its own chunk so a visitor only downloads the one they open.
+// Each editor is its own chunk so a visitor only downloads the one they open. The image editor
+// measures and draws text in Inter, so it also waits for that face; a failed load falls back.
 const ImageEditor = lazy(() =>
-  import("./editors/image/ImageEditor").then((m) => ({ default: m.ImageEditor })),
+  Promise.all([
+    import("./editors/image/ImageEditor"),
+    document.fonts.load('600 16px "Sidebar Inter"').catch(() => []),
+  ]).then(([m]) => ({ default: m.ImageEditor })),
 );
 const VideoEditor = lazy(() =>
   import("./editors/video/VideoEditor").then((m) => ({ default: m.VideoEditor })),
