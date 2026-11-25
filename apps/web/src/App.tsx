@@ -18,7 +18,7 @@ import {
   useState,
 } from "react";
 import { DropOverlay, type DropIntent } from "./components/DropOverlay";
-import { FlagsProvider } from "@databuddy/sdk/react";
+import { FlagsRoot } from "./components/FlagsRoot";
 import { DropzoneHome } from "./components/DropzoneHome";
 import { EditorErrorBoundary } from "./components/EditorErrorBoundary";
 import { KeybindsDialog } from "./components/KeybindsDialog";
@@ -28,8 +28,6 @@ import { StarPromptHost } from "./components/StarPromptHost";
 import { ToastBar } from "./components/ToastBar";
 import type { EditorCommonProps, EditorToolbarActions, PersistSnapshot } from "./editors/types";
 import {
-  analyticsEnabled,
-  DATABUDDY_CLIENT_ID,
   reportError,
   trackEvent,
   type OpenSource,
@@ -685,7 +683,7 @@ export function App() {
     // loaded later, so they animate from the first frame exactly as `motion` components would;
     // `m` keeps drag and layout code (which only the editors use) off Home.
     <LazyMotion features={domAnimation}>
-      <FlagsProvider clientId={DATABUDDY_CLIENT_ID} disabled={!analyticsEnabled()}>
+      <FlagsRoot>
       <GraphicalProvider document={theme} colorMode={colorMode}>
         <Tooltip.Provider delay={350}>
           <div className="app-root" data-state={String(snapshot.value)}>
@@ -789,7 +787,7 @@ export function App() {
           </div>
         </Tooltip.Provider>
       </GraphicalProvider>
-      </FlagsProvider>
+      </FlagsRoot>
     </LazyMotion>
   );
 }

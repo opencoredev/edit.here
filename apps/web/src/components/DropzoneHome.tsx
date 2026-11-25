@@ -25,8 +25,9 @@ import type { Platform } from "../lib/platform";
 import { Keys } from "./Keys";
 import type { RecentWorkspace } from "../lib/workspace-store";
 import { RecentProjects } from "./RecentProjects";
-import { useFlag } from "@databuddy/sdk/react";
-import { homeHeadline, homeHeadlineFlag } from "../lib/flags";
+import { useFlagDetails } from "@databuddy/sdk/react";
+import { analyticsEnabled } from "../lib/analytics";
+import { HOME_HEADLINES, homeHeadline, homeHeadlineFlag } from "../lib/flags";
 
 type DropzoneHomeProps = {
   platform: Platform;
@@ -60,6 +61,11 @@ const SAMPLES: readonly Sample[] = [
   { kind: "video", title: "Video", actions: "Trim · Speed · Audio", glyph: Video01Icon },
 ];
 
+/** The Home headline A/B test's assigned variant; only rendered under FlagsRoot. */
+function FlaggedHeadline() {
+  return homeHeadline(useFlagDetails(homeHeadlineFlag).variant);
+}
+
 /** Home: the whole window is the drop target; the page offers the picker and two samples. */
 export function DropzoneHome({
   platform,
@@ -75,7 +81,6 @@ export function DropzoneHome({
   onClearRecents,
   onDismissError,
 }: DropzoneHomeProps) {
-  const headline = homeHeadline(useFlag(homeHeadlineFlag));
   // The whole plate opens the picker; the button inside stays the keyboard path.
   const onPlateClick = (event: MouseEvent<HTMLDivElement>) => {
     if (opening) return;
@@ -92,7 +97,7 @@ export function DropzoneHome({
       >
         <div className="flex flex-col items-center gap-3 text-center">
           <h1 className="text-[32px] leading-[1.08] font-semibold tracking-[-0.03em] text-balance text-ink sm:text-[42px] sm:leading-[1.08]">
-            {headline}
+            {analyticsEnabled() ? <FlaggedHeadline /> : HOME_HEADLINES.control}
           </h1>
           <p className="font-mono text-xs tracking-normal text-ink-muted">
             100% local · Zero uploads · Works offline
