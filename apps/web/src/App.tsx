@@ -79,9 +79,19 @@ const SAMPLE_FACTORIES: Record<MediaKind, () => Promise<File>> = {
   video: () => import("./lib/sample-generators").then((m) => m.createSampleVideoFile()),
 };
 
-// Each editor is its own chunk so a visitor only downloads the one they open.
+/** Longest the image editor waits for Inter before it opens with whatever face has loaded. */
+const TEXT_FONT_WAIT_MS = 3000;
+
+// Each editor is its own chunk so a visitor only downloads the one they open. The image editor
+// measures and draws text in Inter, so it also waits a bounded time for that face.
 const ImageEditor = lazy(() =>
-  import("./editors/image/ImageEditor").then((m) => ({ default: m.ImageEditor })),
+  Promise.all([
+    import("./editors/image/ImageEditor"),
+    Promise.race([
+      document.fonts.load('600 16px "Sidebar Inter"').catch(() => []),
+      new Promise((resolve) => setTimeout(resolve, TEXT_FONT_WAIT_MS)),
+    ]),
+  ]).then(([m]) => ({ default: m.ImageEditor })),
 );
 const VideoEditor = lazy(() =>
   import("./editors/video/VideoEditor").then((m) => ({ default: m.VideoEditor })),
