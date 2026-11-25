@@ -32,6 +32,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { randomId } from "../../lib/new-id";
+import { isTouchPrimary } from "../../lib/platform";
 import type { CanvasDraftStore } from "./canvas-draft";
 import { measureAnnotationText } from "./render";
 
@@ -479,7 +480,9 @@ export function AnnotationOverlay({
         onPointerLeave={() => setHovering(false)}
         role="application"
         aria-label={
-          tool === "select" ? "Image. Click a drawing or picture to select it." : `Draw: ${tool}`
+          tool === "select"
+            ? `Image. ${isTouchPrimary() ? "Tap" : "Click"} a drawing or picture to select it.`
+            : `Draw: ${tool}`
         }
       />
       {box === null ? null : (

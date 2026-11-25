@@ -157,6 +157,13 @@
 }
 
 @layer components {
+  /* Touch screens have no keyboard to press them with, so menus drop their shortcut hints. */
+  @media (hover: none) and (pointer: coarse) {
+    .ui-menu-shortcut {
+      display: none;
+    }
+  }
+
   /* The provider's root fills the viewport and owns the canvas color. */
   .app-root {
     height: 100dvh;

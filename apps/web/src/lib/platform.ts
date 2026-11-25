@@ -14,6 +14,11 @@ export function detectPlatform(): Platform {
   return /mac|iphone|ipad|ipod/i.test(name) ? "mac" : "other";
 }
 
+/** True when the primary pointer is a finger, so instructions say "Tap" rather than "Click". */
+export function isTouchPrimary(): boolean {
+  return typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+}
+
 /** True when keyboard events should go to a text field instead of shortcuts. */
 export function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;

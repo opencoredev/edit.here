@@ -32,6 +32,7 @@ import {
   type OpenSource,
   type StarPromptPlacement,
 } from "./lib/analytics";
+import { canStoreBlobs } from "./lib/blob-storage-probe";
 import { detectPlatform, isEditableTarget } from "./lib/platform";
 import { useEditorActor } from "./lib/use-editor-actor";
 import { loadRemainingFonts } from "./lib/fonts";
@@ -408,10 +409,22 @@ export function App() {
   // file survives a reload and shows on Home. A restored one is already saved.
   const restoredId = restore?.sessionId;
   const firstSaved = useRef(new Set<string>());
+  const warnedNoStorage = useRef(false);
   useEffect(() => {
     if (session === null || sessionFile === undefined || session.id === restoredId) return;
     if (firstSaved.current.has(session.id)) return;
     firstSaved.current.add(session.id);
+    // Safari Private Browsing can't store files, so the save below fails quietly. Say so once.
+    void canStoreBlobs().then((stores) => {
+      if (stores || warnedNoStorage.current) return;
+      warnedNoStorage.current = true;
+      send({
+        type: "toast.show",
+        message:
+          "This browser won't keep your work here, so a reload closes it. Export to keep it.",
+        tone: "info",
+      });
+    });
     void saveWorkspace(
       {
         id: session.id,
@@ -426,7 +439,7 @@ export function App() {
       },
       { activate: true },
     );
-  }, [session, sessionFile, restoredId]);
+  }, [session, sessionFile, restoredId, send]);
 
   const onPersistState = useCallback(
     ({ state, extraFiles, thumbnail }: PersistSnapshot) => {
