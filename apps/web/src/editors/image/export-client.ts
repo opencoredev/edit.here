@@ -5,6 +5,7 @@
  */
 import type { ExportRequest, ExportResponse } from "./export-protocol";
 import { exportImageBlob } from "./render";
+import { textFontReady } from "./text-fonts";
 
 type ExportArgs = Parameters<typeof exportImageBlob>[0];
 
@@ -124,6 +125,9 @@ export async function exportImage(args: ExportArgs): Promise<Blob> {
     } catch {
       // Copying the bitmaps failed; the page tries with its own.
     }
+  }
+  if (args.state.annotations.some((annotation) => annotation.kind === "text")) {
+    await textFontReady();
   }
   return exportImageBlob(args);
 }

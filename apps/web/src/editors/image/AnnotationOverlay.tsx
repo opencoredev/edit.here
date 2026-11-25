@@ -35,6 +35,7 @@ import { randomId } from "../../lib/new-id";
 import { isTouchPrimary } from "../../lib/platform";
 import type { CanvasDraftStore } from "./canvas-draft";
 import { measureAnnotationText } from "./render";
+import { subscribeTextFonts, textFontSettled } from "./text-fonts";
 
 type Gesture =
   | {
@@ -145,6 +146,8 @@ export function AnnotationOverlay({
   const [surfaceSize, setSurfaceSize] = useState<ImageSize>({ width: 0, height: 0 });
   // Only select mode shows the moving selection; drawing tools never re-render per move.
   const live = useSyncExternalStore(draft.subscribe, tool === "select" ? draft.get : noDraft);
+  // Text boxes are measured in the canvas font, so placing or editing one waits for it.
+  const textFontReady = useSyncExternalStore(subscribeTextFonts, textFontSettled);
   const shown = live ?? shownOutside;
   // The composition in view space. Presses anywhere on it reach the overlay, so a layer beside
   // the base image can be picked and dragged.
@@ -280,6 +283,7 @@ export function AnnotationOverlay({
   };
 
   const editExistingText = (hit: TextAnnotation) => {
+    if (!textFontReady) return;
     const box = annotationBounds(hit, context(base));
     openText({ id: hit.id, topLeft: { x: box.x, y: box.y }, value: hit.text, existing: hit });
   };
@@ -295,6 +299,7 @@ export function AnnotationOverlay({
         editExistingText(hit);
         return;
       }
+      if (!textFontReady) return;
       openText({ id: randomId(), topLeft: point, value: "", existing: null });
       return;
     }
