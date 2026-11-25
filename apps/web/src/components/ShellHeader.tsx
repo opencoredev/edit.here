@@ -268,7 +268,7 @@ export function ShellHeader({
                 variant="secondary"
                 onClick={onCopy}
                 disabled={copyDisabled}
-                className={`h-8! sm:ml-1 ${PHONE_TAP}`}
+                className={`h-8! max-[380px]:hidden sm:ml-1 ${PHONE_TAP}`}
                 aria-label={copied ? "Copied" : (actions.copyLabel ?? "Copy")}
               >
                 <ButtonContent loading={false} contentKey={copied ? "copied" : "copy"}>
@@ -301,7 +301,6 @@ export function ShellHeader({
                 <DirectExportMenu
                   choice={actions.exportFormats}
                   disabled={exportDisabled}
-                  exporting={exporting}
                   platform={platform}
                   onExport={onExport}
                 />
@@ -343,14 +342,29 @@ export function ShellHeader({
                     <Menu.Separator className="sm:hidden" />
                     {/* The main button's other action, so neither is ever more than a menu away. */}
                     {copyFirst ? (
-                      <Menu.Item disabled={exportDisabled} onClick={() => onExport()}>
-                        <Menu.ItemContent
-                          icon={<Icon icon={Download01Icon} className="size-4" />}
-                          shortcut={shortcutText("Mod+E", platform)}
+                      <>
+                        <Menu.Item disabled={exportDisabled} onClick={() => onExport()}>
+                          <Menu.ItemContent
+                            icon={<Icon icon={Download01Icon} className="size-4" />}
+                            shortcut={shortcutText("Mod+E", platform)}
+                          >
+                            {exportLabel}
+                          </Menu.ItemContent>
+                        </Menu.Item>
+                        {/* The narrowest phones have no room for the header's Copy button. */}
+                        <Menu.Item
+                          disabled={copyDisabled}
+                          onClick={onCopy}
+                          className="min-[380px]:hidden"
                         >
-                          {exportLabel}
-                        </Menu.ItemContent>
-                      </Menu.Item>
+                          <Menu.ItemContent
+                            icon={<Icon icon={Copy01Icon} className="size-4" />}
+                            shortcut={shortcutText("Mod+C", platform)}
+                          >
+                            {actions.copyLabel ?? "Copy"}
+                          </Menu.ItemContent>
+                        </Menu.Item>
+                      </>
                     ) : (
                       <Menu.Item disabled={copyDisabled} onClick={onCopy}>
                         <Menu.ItemContent
@@ -520,19 +534,17 @@ function ExportFormatMenu({
 function DirectExportMenu({
   choice,
   disabled,
-  exporting,
   platform,
   onExport,
 }: {
   choice: ExportFormatChoice;
   disabled: boolean;
-  exporting: boolean;
   platform: Platform;
   onExport: (format: string) => void;
 }) {
   return (
     <Menu.Root>
-      <SplitChevron label={exporting ? "Exporting" : "Export"} disabled={disabled} />
+      <SplitChevron label="Export format" disabled={disabled} />
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="end" sideOffset={6}>
           <Menu.Popup className="min-w-44!">

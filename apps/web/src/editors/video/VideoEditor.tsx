@@ -803,15 +803,27 @@ function VideoWorkspace({
       });
       const fileName = videoExportFileName(meta.name, result.format);
       downloadBlob(result.blob, fileName);
-      // WebM written in place of MP4 becomes the selection, so Export names what it writes.
-      if (result.format !== plan.format) commands.setFormat(result.format);
+      // WebM written in place of MP4 becomes the selection, so Export names what it writes. It is
+      // a setting, not an edit: every undo and redo step takes it too, and neither stack changes.
+      const written = result.format;
+      if (written !== plan.format) {
+        const withFormat = (s: VideoDocumentState): VideoDocumentState => ({
+          ...s,
+          exportFormat: written,
+        });
+        setHistory((h) => ({
+          past: h.past.map(withFormat),
+          present: withFormat(h.present),
+          future: h.future.map(withFormat),
+        }));
+      }
       // After the shell's success toast, so the warning is the one left on screen.
       for (const warning of result.warnings) window.setTimeout(() => onStatus(warning, "info"), 0);
-      return { fileName };
+      return { fileName, format: written, note: result.notice };
     } finally {
       setExportProgress(null);
     }
-  }, [commands, file, frame, meta.name, narrow, onStatus, probe]);
+  }, [file, frame, meta.name, narrow, onStatus, probe]);
 
   // Header actions: stable wrappers so registering doesn't loop through the shell.
   const latest = useRef({ copyFrame, exportFile });

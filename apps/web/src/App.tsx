@@ -45,6 +45,7 @@ import {
   recordVisit,
   STAR_PROMPT_KEY,
 } from "./lib/star-prompt";
+import { exportDoneMessage } from "./lib/export-message";
 import { PendingOpens, readyOpen, resolveExportFormat, settleCopy } from "./lib/telemetry";
 import { sourceThumbnail } from "./lib/thumbnail";
 import {
@@ -492,7 +493,8 @@ export function App() {
       )
         return;
       const { kind } = session;
-      // The format the export really uses ("png", "mp4"), never anything from the file.
+      // The format asked for ("png", "mp4"), never anything from the file; a success reports the
+      // format the editor says it wrote instead.
       const reportedFormat = resolveExportFormat(format, actions.exportFormats);
       const formatLabel =
         format === undefined
@@ -501,10 +503,11 @@ export function App() {
       const label = formatLabel === undefined ? actions.exportLabel : `Export ${formatLabel}`;
       send(label === undefined ? { type: "export.start" } : { type: "export.start", label });
       try {
-        const { fileName } = await exportFile(format);
-        send({ type: "export.done", message: `Exported ${fileName}` });
-        if (reportedFormat !== undefined) {
-          trackEvent("export_completed", { kind, format: reportedFormat });
+        const exported = await exportFile(format);
+        send({ type: "export.done", message: exportDoneMessage(exported) });
+        const writtenFormat = resolveExportFormat(exported.format, undefined);
+        if (writtenFormat !== undefined) {
+          trackEvent("export_completed", { kind, format: writtenFormat });
         }
       } catch (cause) {
         send({ type: "export.failed", message: errorMessage(cause, "Export failed.") });

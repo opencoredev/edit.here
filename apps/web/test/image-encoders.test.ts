@@ -74,11 +74,11 @@ describe("image encoders", () => {
   it("names the export toast's file for the format written, not the source", async () => {
     const { encoders } = await withCanvas(["image/jpeg", "image/webp"]);
     const named = (type: string, requested: "image/png" | "image/jpeg" | "image/webp") =>
-      encoders.exportedImageFileName({
+      encoders.imageExportOutput({
         sourceName: "sample-dashboard.png",
         blob: new Blob([], { type }),
         requested,
-      });
+      }).fileName;
     expect(named("image/jpeg", "image/jpeg")).toBe("sample-dashboard-edited.jpg");
     expect(named("image/webp", "image/webp")).toBe("sample-dashboard-edited.webp");
     expect(named("image/png", "image/png")).toBe("sample-dashboard-edited.png");
@@ -86,5 +86,15 @@ describe("image encoders", () => {
     expect(named("image/png", "image/webp")).toBe("sample-dashboard-edited.png");
     // Bytes of no known type keep the requested extension.
     expect(named("", "image/jpeg")).toBe("sample-dashboard-edited.jpg");
+  });
+
+  it("reports the format the bytes hold, so analytics counts what was written", async () => {
+    const { encoders } = await withCanvas([]);
+    const output = encoders.imageExportOutput({
+      sourceName: "shot.png",
+      blob: new Blob([], { type: "image/png" }),
+      requested: "image/webp",
+    });
+    expect(output).toEqual({ fileName: "shot-edited.png", format: "image/png" });
   });
 });

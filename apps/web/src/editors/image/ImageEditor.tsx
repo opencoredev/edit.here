@@ -64,7 +64,7 @@ import {
 import {
   encodableImageFormat,
   encodableImageFormats,
-  exportedImageFileName,
+  imageExportOutput,
 } from "../../lib/image-encoders";
 import { randomId } from "../../lib/new-id";
 import { detectPlatform, isEditableTarget } from "../../lib/platform";
@@ -598,9 +598,9 @@ function ImageWorkspace({
         format,
       });
       // Named for the bytes it holds, in case an encoder still handed back another format.
-      const fileName = exportedImageFileName({ sourceName: file.name, blob, requested: format });
-      downloadBlob(blob, fileName);
-      return { fileName };
+      const output = imageExportOutput({ sourceName: file.name, blob, requested: format });
+      downloadBlob(blob, output.fileName);
+      return { ...output, note: null };
     },
     [file.name, image, fullLayers],
   );

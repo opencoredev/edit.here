@@ -53,11 +53,11 @@ const VIDEO_UNSUPPORTED: Readonly<Record<VideoExportFormat, string>> = {
  * The error shown when the browser can't encode the audio codec this container needs. With
  * `keyHints` it names the mute shortcut; touch and phone layouts have no keyboard to press it.
  */
-export function audioEncodeUnsupportedMessage(
-  format: VideoExportFormat,
-  keyHints: boolean,
-): string {
-  return `${AUDIO_UNSUPPORTED[format]}${keyHints ? " (M)" : ""}.`;
+export function audioEncodeUnsupportedMessage(args: {
+  readonly format: VideoExportFormat;
+  readonly keyHints: boolean;
+}): string {
+  return `${AUDIO_UNSUPPORTED[args.format]}${args.keyHints ? " (M)" : ""}.`;
 }
 
 /** Codecs to ask the browser about before calling `chooseVideoEncoder`. */
@@ -160,13 +160,16 @@ export function chooseAudioExport(
   const target = AUDIO_TARGET[format];
   return args.encodable.has(target)
     ? { kind: "encode", codec: target }
-    : { kind: "unsupported", message: audioEncodeUnsupportedMessage(format, args.keyHints) };
+    : {
+        kind: "unsupported",
+        message: audioEncodeUnsupportedMessage({ format, keyHints: args.keyHints }),
+      };
 }
 
 /** The container an export writes, and why when it isn't the one the user selected. */
 export type VideoExportFormatChoice =
   | { readonly kind: "selected"; readonly format: VideoExportFormat }
-  | { readonly kind: "fallback"; readonly format: VideoExportFormat; readonly notice: string };
+  | { readonly kind: "fallback"; readonly format: "webm"; readonly notice: string };
 
 /**
  * The container an export writes: the selected one, except MP4 whose audio needs an AAC encoder

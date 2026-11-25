@@ -55,6 +55,10 @@ export type EditorToolbarActions = {
 export type ExportedFile = {
   /** The name it was saved under, with the extension of the bytes it holds. */
   readonly fileName: string;
+  /** The format written, as an `exportFormats` option id; it can differ from the one asked for. */
+  readonly format: string;
+  /** A sentence the success toast adds, such as why the format changed; null for none. */
+  readonly note: string | null;
 };
 
 export type ExportFormatChoice = {

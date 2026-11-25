@@ -131,7 +131,7 @@ describe("chooseAudioExport", () => {
       kind: "unsupported",
       message: "This browser can't encode AAC audio for MP4. Export as WebM, or mute the audio.",
     });
-    expect(audioEncodeUnsupportedMessage("webm", false)).not.toContain("(M)");
+    expect(audioEncodeUnsupportedMessage({ format: "webm", keyHints: false })).not.toContain("(M)");
   });
 
   it("copies Opus or Vorbis into WebM and encodes Opus otherwise", () => {
@@ -159,7 +159,10 @@ describe("chooseAudioExport", () => {
         contiguous: true,
         encodable: new Set(),
       }),
-    ).toEqual({ kind: "unsupported", message: audioEncodeUnsupportedMessage("webm", true) });
+    ).toEqual({
+      kind: "unsupported",
+      message: audioEncodeUnsupportedMessage({ format: "webm", keyHints: true }),
+    });
   });
 
   it("drops audio it can neither copy nor decode, with a warning", () => {
@@ -284,7 +287,7 @@ describe("chooseAudioExport with audio adjustments", () => {
   it("refuses when an adjustment needs an encoder the browser lacks", () => {
     expect(choose({ ...base, encodable: opusOnly, adjust: { ...untouched, fadeIn: 1 } })).toEqual({
       kind: "unsupported",
-      message: audioEncodeUnsupportedMessage("mp4", true),
+      message: audioEncodeUnsupportedMessage({ format: "mp4", keyHints: true }),
     });
   });
 });

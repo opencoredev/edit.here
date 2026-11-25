@@ -3,7 +3,7 @@ import { writeFrameToClipboard } from "../src/editors/video/copy-frame";
 import { AppearanceLatch } from "../src/lib/star-prompt";
 import { PendingOpens, readyOpen, resolveExportFormat, settleCopy } from "../src/lib/telemetry";
 
-const noop = async () => ({ fileName: "photo-edited.png" });
+const noop = async () => ({ fileName: "photo-edited.png", format: "image/png", note: null });
 
 describe("editor_opened (readyOpen + PendingOpens)", () => {
   it("counts an open once, when its editor has decoded the file", () => {

@@ -48,13 +48,14 @@ export function exportFormatOfBlob(blob: Blob): ImageExportFormat | null {
 }
 
 /**
- * The name an image export downloads under: the source name with the extension of the format
- * the bytes really hold (an encoder can hand back PNG for another request), else `requested`.
+ * What an image export wrote: the format the bytes really hold (an encoder can hand back PNG for
+ * another request), else `requested`, and the source name with that format's extension.
  */
-export function exportedImageFileName(args: {
+export function imageExportOutput(args: {
   readonly sourceName: string;
   readonly blob: Blob;
   readonly requested: ImageExportFormat;
-}): string {
-  return exportFileName(args.sourceName, exportFormatOfBlob(args.blob) ?? args.requested);
+}): { readonly fileName: string; readonly format: ImageExportFormat } {
+  const format = exportFormatOfBlob(args.blob) ?? args.requested;
+  return { fileName: exportFileName(args.sourceName, format), format };
 }

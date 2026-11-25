@@ -55,6 +55,8 @@ export type ExportResult = {
   readonly blob: Blob;
   /** The container written: the plan's, or WebM when MP4's audio can't be encoded here. */
   readonly format: VideoExportFormat;
+  /** Why `format` differs from the plan's, for the success toast; null when it doesn't. */
+  readonly notice: string | null;
   /** Human notes about tracks that were dropped, for a warning toast. */
   readonly warnings: readonly string[];
 };
@@ -307,7 +309,9 @@ async function convert(args: {
   );
   if (audioDiscards.some((d) => d.reason === "no_encodable_target_codec")) {
     // Never ship a silent file, or a codec the container's players reject, without asking.
-    throw new Error(audioEncodeUnsupportedMessage(args.format, args.keyHints));
+    throw new Error(
+      audioEncodeUnsupportedMessage({ format: args.format, keyHints: args.keyHints }),
+    );
   }
   conversion.onProgress = (progress) => args.onProgress(Math.min(1, Math.max(0, progress)));
   await conversion.execute();
@@ -444,10 +448,7 @@ export async function exportVideo(selected: ExportArgs): Promise<ExportResult> {
     plan,
     retime: samplesChange ? retime : null,
   });
-  const audioWarnings = [
-    ...(target.kind === "fallback" ? [target.notice] : []),
-    ...(audioChoice.kind === "drop" ? [audioChoice.warning] : []),
-  ];
+  const audioWarnings = audioChoice.kind === "drop" ? [audioChoice.warning] : [];
 
   const input = new Input({ source: new BlobSource(args.file), formats: ALL_FORMATS });
   try {
@@ -467,6 +468,7 @@ export async function exportVideo(selected: ExportArgs): Promise<ExportResult> {
     return {
       blob: new Blob([result.buffer], { type: result.mimeType }),
       format: plan.format,
+      notice: target.kind === "fallback" ? target.notice : null,
       warnings: [...audioWarnings, ...result.warnings],
     };
   } finally {
