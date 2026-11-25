@@ -132,14 +132,16 @@ export type ImageRotation = 0 | 90 | 180 | 270;
 
 export type BackgroundPreset =
   | "none"
-  | "hyper"
-  | "ember"
-  | "mojave"
-  | "emerald"
-  | "iris"
-  | "obsidian"
-  | "silver"
-  | "paper"
+  | "dusk"
+  | "azure"
+  | "lagoon"
+  | "canopy"
+  | "solstice"
+  | "orchid"
+  | "midnight"
+  | "graphite"
+  | "mist"
+  | "linen"
   | "custom";
 
 /** How the `custom` frame background paints: one color, or a two-color linear gradient. */

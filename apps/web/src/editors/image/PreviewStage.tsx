@@ -1,6 +1,7 @@
 import {
   annotationListChange,
   baseImageShift,
+  canvasBackgroundCss,
   DEFAULT_FRAME_CONFIG,
   dotGridSpacing,
   imageLayoutsEqual,
@@ -94,7 +95,7 @@ function backgroundStyle(background: ExportBackground): CSSProperties | undefine
     case "matte":
       return { background: MATTE_CSS };
     case "frame":
-      return { background: background.css };
+      return { background: canvasBackgroundCss(background.background) };
     default: {
       const _exhaustive: never = background;
       return _exhaustive;

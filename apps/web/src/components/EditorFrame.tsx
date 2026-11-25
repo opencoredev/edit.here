@@ -130,6 +130,7 @@ export function FadeScroller({
   innerClassName?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const reveal = useRef<(animate: boolean) => void>(() => {});
   useEffect(() => {
     const element = ref.current;
     if (element === null) return;
@@ -139,7 +140,14 @@ export function FadeScroller({
       element.toggleAttribute("data-fade-end", element.scrollLeft < max - 1);
     };
     update();
-    const observer = new ResizeObserver(update);
+    let width = element.clientWidth;
+    const observer = new ResizeObserver(() => {
+      update();
+      // A narrower row can hide the pressed control; a user's own scroll never recenters.
+      if (element.clientWidth === width) return;
+      width = element.clientWidth;
+      reveal.current(false);
+    });
     observer.observe(element);
     if (element.firstElementChild !== null) observer.observe(element.firstElementChild);
     element.addEventListener("scroll", update, { passive: true });
@@ -154,20 +162,17 @@ export function FadeScroller({
   useEffect(() => {
     const element = ref.current;
     if (element === null) return;
-    const pressed = element.querySelector<HTMLElement>('[aria-pressed="true"]');
+    const pressed = element.querySelector<HTMLElement>(
+      '[aria-pressed="true"], [role="radio"][aria-checked="true"]',
+    );
+    reveal.current = (animate) => {
+      if (pressed !== null) revealControl(element, pressed, animate);
+    };
     const previous = lastPressed.current;
     if (pressed === previous) return;
     lastPressed.current = pressed;
-    if (pressed === null) return;
-    const start = pressed.getBoundingClientRect().left - element.getBoundingClientRect().left;
-    const width = pressed.offsetWidth;
-    if (start < 0 || start + width > element.clientWidth) {
-      element.scrollTo({
-        left: element.scrollLeft + start - (element.clientWidth - width) / 2,
-        // Jump on first show or reduced motion; glide when the user picks another tool.
-        behavior: previous === null || reduced ? "instant" : "smooth",
-      });
-    }
+    // Jump on first show or reduced motion; glide when the user picks another tool.
+    reveal.current(previous !== null && !reduced);
   });
   return (
     <div ref={ref} className={["fade-scroller min-w-0", className ?? ""].join(" ")}>
@@ -176,6 +181,21 @@ export function FadeScroller({
       </div>
     </div>
   );
+}
+
+/** Centers `control` in the scroller when it sits outside, or under a faded edge. */
+function revealControl(element: HTMLElement, control: HTMLElement, animate: boolean): void {
+  const start = control.getBoundingClientRect().left - element.getBoundingClientRect().left;
+  const width = control.offsetWidth;
+  const fade = 28;
+  const hiddenStart = start < (element.scrollLeft > 0 ? fade : 0);
+  const endFade = element.scrollLeft + element.clientWidth < element.scrollWidth ? fade : 0;
+  const hiddenEnd = start + width > element.clientWidth - endFade;
+  if (!hiddenStart && !hiddenEnd) return;
+  element.scrollTo({
+    left: element.scrollLeft + start - (element.clientWidth - width) / 2,
+    behavior: animate ? "smooth" : "instant",
+  });
 }
 
 /** Phones: a swipeable `FadeScroller` that takes the row's free width. Desktop: the children as is. */

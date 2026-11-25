@@ -2,8 +2,10 @@
  * Pure, immutable document operations. Every function returns a new value and never mutates
  * its input. Functions that create entities take the new id as an argument so they stay pure.
  */
+import { canvasBackgroundCss, type CanvasBackground, type MeshBlob } from "./image/background";
 import type {
   AnnotationStyle,
+  BackgroundPreset,
   FrameConfig,
   HistoryStack,
   ImageDocumentState,
@@ -162,7 +164,7 @@ export const DEFAULT_ANNOTATION_STYLE: AnnotationStyle = { color: "#ff3b30", siz
 
 export const DEFAULT_FRAME_CONFIG: FrameConfig = {
   enabled: false,
-  preset: "hyper",
+  preset: "dusk",
   customMode: "gradient",
   customColor: "#6366f1",
   customColorEnd: "#ec4899",
@@ -172,51 +174,100 @@ export const DEFAULT_FRAME_CONFIG: FrameConfig = {
   shadow: true,
 };
 
-/** CSS backgrounds for each frame preset. `custom` resolves from the `FrameConfig.custom*` fields. */
-export const BACKGROUND_PRESETS: Readonly<
-  Record<Exclude<FrameConfig["preset"], "custom">, { readonly label: string; readonly css: string }>
-> = {
-  none: { label: "None", css: "transparent" },
-  hyper: {
-    label: "Hyper",
-    css: "linear-gradient(135deg, #4f46e5 0%, #2563eb 52%, #06b6d4 100%)",
-  },
-  ember: {
-    label: "Ember",
-    css: "linear-gradient(135deg, #fb923c 0%, #f43f5e 52%, #9333ea 100%)",
-  },
-  mojave: {
-    label: "Mojave",
-    css: "linear-gradient(135deg, #f59e0b 0%, #ec4899 55%, #6366f1 100%)",
-  },
-  emerald: {
-    label: "Emerald",
-    css: "linear-gradient(135deg, #0f766e 0%, #10b981 50%, #0ea5e9 100%)",
-  },
-  iris: {
-    label: "Iris",
-    css: "linear-gradient(135deg, #c084fc 0%, #818cf8 50%, #f472b6 100%)",
-  },
-  obsidian: {
-    label: "Obsidian",
-    css: "linear-gradient(135deg, #27272a 0%, #18181b 55%, #09090b 100%)",
-  },
-  silver: {
-    label: "Silver",
-    css: "linear-gradient(145deg, #ffffff 0%, #e4e4e7 55%, #d4d4d8 100%)",
-  },
-  paper: { label: "Paper", css: "linear-gradient(145deg, #faf7f2 0%, #ece6dc 100%)" },
+/** A preset background: its tray label and what it paints. */
+export type BackgroundPresetDefinition = {
+  readonly label: string;
+  readonly background: CanvasBackground;
 };
 
-/** The custom background as CSS: the solid color, or a two-stop gradient at its angle. */
-export function customBackgroundCss(
+function mesh(label: string, base: string, blobs: readonly MeshBlob[]): BackgroundPresetDefinition {
+  return { label, background: { kind: "mesh", base, blobs } };
+}
+
+/**
+ * Soft wallpaper-like meshes, all drawn in code. Blobs sit near the edges, where the frame
+ * padding shows them. `custom` resolves from the `FrameConfig.custom*` fields.
+ */
+export const BACKGROUND_PRESETS: Readonly<
+  Record<Exclude<BackgroundPreset, "custom">, BackgroundPresetDefinition>
+> = {
+  none: { label: "None", background: { kind: "solid", color: "transparent" } },
+  dusk: mesh("Dusk", "#212759", [
+    { x: 0.06, y: 0.06, rx: 0.88, ry: 0.74, color: "#5c78ee", opacity: 0.88 },
+    { x: 0.94, y: 0.16, rx: 0.86, ry: 0.78, color: "#c95ca4", opacity: 0.84 },
+    { x: 0.96, y: 0.9, rx: 0.82, ry: 0.74, color: "#f5a382", opacity: 0.84 },
+    { x: 0.06, y: 0.94, rx: 0.76, ry: 0.68, color: "#3f358f", opacity: 0.74 },
+  ]),
+  azure: mesh("Azure", "#1a4280", [
+    { x: 0.06, y: 0.1, rx: 0.9, ry: 0.74, color: "#4da3f5", opacity: 0.9 },
+    { x: 0.12, y: 0.96, rx: 0.84, ry: 0.7, color: "#5cd2e8", opacity: 0.8 },
+    { x: 0.94, y: 0.06, rx: 0.78, ry: 0.68, color: "#b4ccff", opacity: 0.78 },
+    { x: 0.94, y: 0.94, rx: 0.76, ry: 0.72, color: "#1d3878", opacity: 0.72 },
+  ]),
+  lagoon: mesh("Lagoon", "#0f3a44", [
+    { x: 0.06, y: 0.08, rx: 0.86, ry: 0.72, color: "#2e82bc", opacity: 0.82 },
+    { x: 0.94, y: 0.12, rx: 0.88, ry: 0.76, color: "#2bc4b2", opacity: 0.86 },
+    { x: 0.1, y: 0.94, rx: 0.84, ry: 0.7, color: "#65d9b0", opacity: 0.8 },
+    { x: 0.94, y: 0.94, rx: 0.72, ry: 0.7, color: "#0c2f3b", opacity: 0.72 },
+  ]),
+  canopy: mesh("Canopy", "#173c30", [
+    { x: 0.06, y: 0.12, rx: 0.88, ry: 0.76, color: "#5ca678", opacity: 0.88 },
+    { x: 0.96, y: 0.06, rx: 0.86, ry: 0.7, color: "#dbe094", opacity: 0.76 },
+    { x: 0.92, y: 0.92, rx: 0.82, ry: 0.74, color: "#1f6f65", opacity: 0.82 },
+    { x: 0.1, y: 0.94, rx: 0.78, ry: 0.66, color: "#438a5e", opacity: 0.76 },
+  ]),
+  solstice: mesh("Solstice", "#54213d", [
+    { x: 0.06, y: 0.94, rx: 0.84, ry: 0.74, color: "#7b2d68", opacity: 0.84 },
+    { x: 0.96, y: 0.74, rx: 0.88, ry: 0.8, color: "#e85d75", opacity: 0.86 },
+    { x: 0.06, y: 0.08, rx: 0.88, ry: 0.76, color: "#f79552", opacity: 0.9 },
+    { x: 0.62, y: 0.04, rx: 0.78, ry: 0.6, color: "#ffcf94", opacity: 0.72 },
+  ]),
+  orchid: mesh("Orchid", "#2c1238", [
+    { x: 0.06, y: 0.1, rx: 0.86, ry: 0.76, color: "#823ec4", opacity: 0.86 },
+    { x: 0.94, y: 0.18, rx: 0.88, ry: 0.78, color: "#df4f8e", opacity: 0.88 },
+    { x: 0.96, y: 0.9, rx: 0.82, ry: 0.72, color: "#f59ebc", opacity: 0.8 },
+    { x: 0.08, y: 0.94, rx: 0.78, ry: 0.7, color: "#4f1e6b", opacity: 0.8 },
+  ]),
+  midnight: mesh("Midnight", "#0a0f20", [
+    { x: 0.1, y: 0.08, rx: 0.88, ry: 0.74, color: "#233e7a", opacity: 0.88 },
+    { x: 0.92, y: 0.88, rx: 0.82, ry: 0.74, color: "#372c6b", opacity: 0.82 },
+    { x: 0.9, y: 0.1, rx: 0.72, ry: 0.6, color: "#3d5c99", opacity: 0.58 },
+  ]),
+  graphite: mesh("Graphite", "#111318", [
+    { x: 0.22, y: 0.04, rx: 0.9, ry: 0.68, color: "#37404f", opacity: 0.84 },
+    { x: 0.92, y: 0.92, rx: 0.8, ry: 0.72, color: "#282e3b", opacity: 0.8 },
+    { x: 0.86, y: 0.1, rx: 0.68, ry: 0.58, color: "#465063", opacity: 0.48 },
+  ]),
+  mist: mesh("Mist", "#d6e0ee", [
+    { x: 0.08, y: 0.92, rx: 0.86, ry: 0.74, color: "#b3ccf0", opacity: 0.86 },
+    { x: 0.94, y: 0.16, rx: 0.84, ry: 0.74, color: "#cfcfeb", opacity: 0.82 },
+    { x: 0.1, y: 0.06, rx: 0.78, ry: 0.64, color: "#eff4fa", opacity: 0.78 },
+    { x: 0.92, y: 0.94, rx: 0.74, ry: 0.68, color: "#bbc8de", opacity: 0.72 },
+  ]),
+  linen: mesh("Linen", "#e0d7ca", [
+    { x: 0.08, y: 0.92, rx: 0.86, ry: 0.74, color: "#e3c4b8", opacity: 0.84 },
+    { x: 0.94, y: 0.12, rx: 0.84, ry: 0.72, color: "#eed0b2", opacity: 0.84 },
+    { x: 0.1, y: 0.08, rx: 0.76, ry: 0.64, color: "#f4ede2", opacity: 0.8 },
+    { x: 0.92, y: 0.94, rx: 0.74, ry: 0.68, color: "#ccbba6", opacity: 0.72 },
+  ]),
+};
+
+/** The custom background: the solid color, or a two-stop gradient at its angle. */
+export function customBackground(
   frame: Pick<FrameConfig, "customMode" | "customColor" | "customColorEnd" | "customAngle">,
-): string {
+): CanvasBackground {
   switch (frame.customMode) {
     case "solid":
-      return frame.customColor;
+      return { kind: "solid", color: frame.customColor };
     case "gradient":
-      return `linear-gradient(${frame.customAngle}deg, ${frame.customColor} 0%, ${frame.customColorEnd} 100%)`;
+      return {
+        kind: "linear",
+        angle: frame.customAngle,
+        stops: [
+          { offset: 0, color: frame.customColor },
+          { offset: 1, color: frame.customColorEnd },
+        ],
+      };
     default: {
       const _exhaustive: never = frame.customMode;
       return _exhaustive;
@@ -224,10 +275,14 @@ export function customBackgroundCss(
   }
 }
 
-export function frameBackgroundCss(frame: FrameConfig): string {
+export function frameBackground(frame: FrameConfig): CanvasBackground {
   return frame.preset === "custom"
-    ? customBackgroundCss(frame)
-    : BACKGROUND_PRESETS[frame.preset].css;
+    ? customBackground(frame)
+    : BACKGROUND_PRESETS[frame.preset].background;
+}
+
+export function frameBackgroundCss(frame: FrameConfig): string {
+  return canvasBackgroundCss(frameBackground(frame));
 }
 
 export function createInitialImageState(): ImageDocumentState {

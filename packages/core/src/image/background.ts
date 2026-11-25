@@ -1,10 +1,25 @@
 /**
- * Parses the CSS backgrounds used by frame presets (a solid color or a `linear-gradient` with
- * an angle and percentage stops) into a form a canvas can paint, so exports match the CSS.
+ * Frame backgrounds as data: a solid color, a linear gradient, or a mesh of soft color blobs over
+ * a base color. The stage paints them through `canvasBackgroundCss` and exports paint the same
+ * definition on a canvas, so the two match.
  */
 import type { ImageSize } from "./geometry";
 
 export type GradientStop = { readonly offset: number; readonly color: string };
+
+/**
+ * A soft elliptical glow. Its center and radii are fractions of the canvas width and height, and
+ * its color fades from `opacity` at the center to nothing at the radius.
+ */
+export type MeshBlob = {
+  readonly x: number;
+  readonly y: number;
+  readonly rx: number;
+  readonly ry: number;
+  /** `#rrggbb`. */
+  readonly color: string;
+  readonly opacity: number;
+};
 
 export type CanvasBackground =
   | { readonly kind: "solid"; readonly color: string }
@@ -12,52 +27,66 @@ export type CanvasBackground =
       readonly kind: "linear";
       readonly angle: number;
       readonly stops: readonly [GradientStop, ...GradientStop[]];
+    }
+  | {
+      readonly kind: "mesh";
+      /** `#rrggbb`, painted first. */
+      readonly base: string;
+      /** Painted in order, so the last blob is on top. */
+      readonly blobs: readonly MeshBlob[];
     };
 
-const LINEAR = /^linear-gradient\(\s*(-?[\d.]+)deg\s*,(.*)\)$/i;
-const STOP = /^\s*(#[0-9a-f]{3,8}|[a-z]+|rgba?\([^)]*\))\s*(?:(-?[\d.]+)%)?\s*$/i;
+/** Falloff from a blob's center (offset 0) to its edge (offset 1): one minus smoothstep. */
+const BLOB_FALLOFF = [0, 0.2, 0.4, 0.6, 0.8, 1].map((t) => ({
+  offset: t,
+  alpha: 1 - t * t * (3 - 2 * t),
+}));
 
-/** Splits on top-level commas (not the ones inside `rgb(...)`). */
-function splitTopLevel(input: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let current = "";
-  for (const ch of input) {
-    if (ch === "(") depth++;
-    if (ch === ")") depth--;
-    if (ch === "," && depth === 0) {
-      parts.push(current);
-      current = "";
-    } else {
-      current += ch;
-    }
-  }
-  parts.push(current);
-  return parts;
+function hexChannels(hex: string): readonly [number, number, number] {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
 }
 
-/** Returns null for CSS it does not understand; callers fall back to a solid fill. */
-export function parseCanvasBackground(css: string): CanvasBackground | null {
-  const trimmed = css.trim();
-  const linear = LINEAR.exec(trimmed);
-  if (linear === null) {
-    return /^(#[0-9a-f]{3,8}|[a-z]+|rgba?\([^)]*\))$/i.test(trimmed)
-      ? { kind: "solid", color: trimmed }
-      : null;
+const round = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * The blob's color stops. Every stop keeps the blob's own color and only alpha falls, so the
+ * premultiplied (CSS) and straight (canvas) interpolations agree.
+ */
+export function blobStops(blob: MeshBlob): readonly GradientStop[] {
+  const [r, g, b] = hexChannels(blob.color);
+  return BLOB_FALLOFF.map((stop) => ({
+    offset: stop.offset,
+    color: `rgba(${r}, ${g}, ${b}, ${round(stop.alpha * blob.opacity)})`,
+  }));
+}
+
+const percent = (fraction: number) => `${round(fraction * 100)}%`;
+
+/** The background as a CSS `background` value. */
+export function canvasBackgroundCss(background: CanvasBackground): string {
+  switch (background.kind) {
+    case "solid":
+      return background.color;
+    case "linear": {
+      const stops = background.stops.map((s) => `${s.color} ${percent(s.offset)}`).join(", ");
+      return `linear-gradient(${background.angle}deg, ${stops})`;
+    }
+    case "mesh": {
+      const layers = background.blobs.map((blob) => {
+        const stops = blobStops(blob)
+          .map((s) => `${s.color} ${percent(s.offset)}`)
+          .join(", ");
+        return `radial-gradient(${percent(blob.rx)} ${percent(blob.ry)} at ${percent(blob.x)} ${percent(blob.y)}, ${stops})`;
+      });
+      // CSS stacks the first layer on top; the base color goes last.
+      return [...layers.toReversed(), background.base].join(", ");
+    }
+    default: {
+      const _exhaustive: never = background;
+      return _exhaustive;
+    }
   }
-  const angle = Number(linear[1]);
-  const rawStops = splitTopLevel(linear[2] ?? "");
-  const stops: GradientStop[] = [];
-  for (const [index, raw] of rawStops.entries()) {
-    const match = STOP.exec(raw);
-    if (match === null || match[1] === undefined) return null;
-    const offset =
-      match[2] === undefined ? index / Math.max(1, rawStops.length - 1) : Number(match[2]) / 100;
-    stops.push({ color: match[1], offset: Math.min(1, Math.max(0, offset)) });
-  }
-  const [first, ...rest] = stops;
-  if (first === undefined || !Number.isFinite(angle)) return null;
-  return { kind: "linear", angle, stops: [first, ...rest] };
 }
 
 /**
