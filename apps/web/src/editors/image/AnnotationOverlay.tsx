@@ -32,6 +32,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { randomId } from "../../lib/new-id";
+import { isTouchPrimary } from "../../lib/platform";
 import type { CanvasDraftStore } from "./canvas-draft";
 import { measureAnnotationText } from "./render";
 
@@ -479,7 +480,9 @@ export function AnnotationOverlay({
         onPointerLeave={() => setHovering(false)}
         role="application"
         aria-label={
-          tool === "select" ? "Image. Click a drawing or picture to select it." : `Draw: ${tool}`
+          tool === "select"
+            ? `Image. ${isTouchPrimary() ? "Tap" : "Click"} a drawing or picture to select it.`
+            : `Draw: ${tool}`
         }
       />
       {box === null ? null : (
@@ -543,6 +546,9 @@ export function AnnotationOverlay({
   );
 }
 
+/** Smallest font size iOS Safari focuses a field at without zooming the page. */
+const MIN_FIELD_FONT_PX = 16;
+
 /** Visible handle size and its touch target, in screen pixels at any zoom. */
 const HANDLE_SIZE = 8;
 const HANDLE_HIT = 22;
@@ -574,13 +580,19 @@ function TextEditor({
   onDone: (commit: boolean) => void;
 }) {
   const lines = value.split("\n");
+  // iOS Safari zooms the whole page into a focused field whose font is under 16px and leaves it
+  // zoomed after the keyboard closes. Text on a fitted image is often smaller, so the field is
+  // laid out at least that large and scaled back down to the text's size on the canvas; Safari
+  // reads the computed font size, which a transform doesn't change.
+  const upscale = Math.max(1, MIN_FIELD_FONT_PX / fontSize);
+  const fieldFontSize = fontSize * upscale;
   // Sized from the renderer's own measurement so wide glyphs never wrap onto a hidden line.
-  const widest = Math.max(0, ...lines.map((line) => measureAnnotationText(line, fontSize)));
+  const widest = Math.max(0, ...lines.map((line) => measureAnnotationText(line, fieldFontSize)));
   const width = Math.max(
-    Math.ceil(fontSize * 1.5),
-    Math.ceil(widest + Math.max(12, fontSize * 0.6)),
+    Math.ceil(fieldFontSize * 1.5),
+    Math.ceil(widest + Math.max(12 * upscale, fieldFontSize * 0.6)),
   );
-  const height = Math.ceil(lines.length * fontSize * TEXT_LINE_HEIGHT);
+  const height = Math.ceil(lines.length * fieldFontSize * TEXT_LINE_HEIGHT);
   return (
     <textarea
       ref={inputRef}
@@ -610,13 +622,16 @@ function TextEditor({
         caretColor: color,
         fontFamily: '"Sidebar Inter", system-ui, sans-serif',
         fontWeight: 600,
-        fontSize: `${fontSize}px`,
+        fontSize: `${fieldFontSize}px`,
         lineHeight: TEXT_LINE_HEIGHT,
         whiteSpace: "pre",
         width: `${width}px`,
         height: `${height}px`,
-        outlineWidth: unzoomedPx(1),
-        outlineOffset: unzoomedPx(2),
+        transform: upscale === 1 ? undefined : `scale(${1 / upscale})`,
+        transformOrigin: "0 0",
+        // The scale shrinks the outline too; widen it by as much so it keeps its screen size.
+        outlineWidth: unzoomedPx(upscale),
+        outlineOffset: unzoomedPx(2 * upscale),
       }}
     />
   );

@@ -62,6 +62,11 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import {
+  encodableImageFormat,
+  encodableImageFormats,
+  exportFormatOfBlob,
+} from "../../lib/image-encoders";
 import { randomId } from "../../lib/new-id";
 import { detectPlatform, isEditableTarget } from "../../lib/platform";
 import { usePersist } from "../../lib/use-persist";
@@ -577,8 +582,9 @@ function ImageWorkspace({
     async (requested?: string) => {
       const state = presentRef.current;
       // A format picked from the menu exports now, before the state's own format catches up.
-      const format =
-        IMAGE_EXPORT_FORMATS.find((f) => f.format === requested)?.format ?? state.exportFormat;
+      const format = encodableImageFormat(
+        IMAGE_EXPORT_FORMATS.find((f) => f.format === requested)?.format ?? state.exportFormat,
+      );
       const blob = await exportImage({
         source: image.full,
         sourceSize: image.size,
@@ -586,7 +592,8 @@ function ImageWorkspace({
         layers: fullLayers,
         format,
       });
-      downloadBlob(blob, exportFileName(file.name, format));
+      // Named for the bytes it holds, in case an encoder still handed back another format.
+      downloadBlob(blob, exportFileName(file.name, exportFormatOfBlob(blob) ?? format));
     },
     [file.name, image, fullLayers],
   );
@@ -618,13 +625,14 @@ function ImageWorkspace({
       });
   }, [image, fullLayers, onStatus]);
 
-  const formatLabel = exportFormatInfo(present.exportFormat).label;
+  // A saved WebP choice opened in Safari, which can't encode WebP, exports and reads as PNG.
+  const exportFormat = encodableImageFormat(present.exportFormat);
+  const formatLabel = exportFormatInfo(exportFormat).label;
   const undoable = canUndo(history);
   const redoable = canRedo(history);
-  const exportFormat = present.exportFormat;
   const exportFormats = useMemo(
     () => ({
-      options: IMAGE_EXPORT_FORMATS.map((f) => ({ id: f.format, label: f.label })),
+      options: encodableImageFormats().map((f) => ({ id: f.format, label: f.label })),
       selected: exportFormat,
       onSelect: (id: string) => {
         const format = IMAGE_EXPORT_FORMATS.find((f) => f.format === id)?.format;

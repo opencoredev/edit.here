@@ -978,7 +978,9 @@ function ColorField({
           value={draft ?? value}
           spellCheck={false}
           maxLength={7}
-          className="timecode min-w-0 flex-1 px-2! text-xs uppercase"
+          // 16px on touch screens: iOS Safari zooms the page into a focused field set smaller.
+          // Important, to beat the font size the Graphical input sets inline.
+          className="timecode min-w-0 flex-1 px-2! text-xs uppercase pointer-coarse:text-base!"
           onChange={(event) => {
             const next = event.currentTarget.value.trim();
             const hex = next.startsWith("#") ? next : `#${next}`;

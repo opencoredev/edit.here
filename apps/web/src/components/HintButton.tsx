@@ -95,7 +95,7 @@ export function HintButton({
           <span
             aria-hidden="true"
             className={[
-              "pointer-events-none absolute right-[3px] bottom-[2px] font-mono text-[9px] leading-none font-medium tabular-nums max-sm:hidden",
+              "pointer-events-none absolute right-[3px] bottom-[2px] font-mono text-[9px] leading-none font-medium tabular-nums max-sm:hidden pointer-coarse:hidden",
               pressed === true ? "text-ink" : "text-ink-muted",
             ].join(" ")}
           >
