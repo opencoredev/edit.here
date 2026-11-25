@@ -5,6 +5,7 @@ import {
   type MediaKind,
 } from "@edit-here/core";
 import {
+  Activity01Icon,
   ArrowDown01Icon,
   Cancel01Icon,
   Copy01Icon,
@@ -59,11 +60,19 @@ function shortcutText(combo: KeyCombo, platform: Platform): string {
 /** 40×40 tap targets for header buttons on phones. */
 const PHONE_TAP = "max-sm:size-10! max-sm:px-0!";
 
-/** The repo link: an icon-only ghost button with the same tooltip as the header's `HintButton`s. */
-function GitHubLink({
+const STATUS_URL = "https://status.databuddy.cc/edit-here";
+
+/** An outside link (repo, status page): an icon-only ghost button with the same tooltip as the header's `HintButton`s. */
+function ExternalLink({
+  href,
+  label,
+  icon,
   className,
   onOpen,
 }: {
+  href: string;
+  label: string;
+  icon: IconSvgElement;
   className?: string;
   onOpen?: (() => void) | undefined;
 }) {
@@ -77,7 +86,7 @@ function GitHubLink({
             render={({ role: _role, onKeyDown, onKeyUp, onClick, ...buttonProps }) => (
               <a
                 {...buttonProps}
-                href={REPO_URL}
+                href={href}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(event) => {
@@ -97,17 +106,17 @@ function GitHubLink({
                 }}
               />
             )}
-            aria-label="View on GitHub"
+            aria-label={label}
             style={{ paddingInline: "var(--space-xs)" }}
             className={className}
           />
         }
       >
-        <Icon icon={GithubIcon} className="size-4" />
+        <Icon icon={icon} className="size-4" />
       </Tooltip.Trigger>
       <Tooltip.Portal>
         <Tooltip.Positioner sideOffset={8}>
-          <Tooltip.Popup>View on GitHub</Tooltip.Popup>
+          <Tooltip.Popup>{label}</Tooltip.Popup>
         </Tooltip.Positioner>
       </Tooltip.Portal>
     </Tooltip.Root>
@@ -139,7 +148,7 @@ function Logo() {
  * the trailing side. Phones with a file open: Close, then undo and redo, then Export; the file
  * name moves into the overflow menu. Everything else (copy, open, theme, the GitHub link, and
  * shortcuts on phones) sits in that one menu; desktop keeps GitHub and shortcuts buttons next to
- * undo. Home shows GitHub, shortcuts and theme buttons on the trailing side.
+ * undo. Home shows status, GitHub, shortcuts and theme buttons on the trailing side.
  */
 export function ShellHeader({
   meta,
@@ -216,7 +225,12 @@ export function ShellHeader({
             {/* Desktop keeps the repo link and shortcut sheet one click away; phones find them
                 in the menu. */}
             <span className="contents max-sm:hidden">
-              <GitHubLink onOpen={onOpenGitHub} />
+              <ExternalLink
+                href={REPO_URL}
+                label="View on GitHub"
+                icon={GithubIcon}
+                onOpen={onOpenGitHub}
+              />
               <HintButton
                 label="Keyboard shortcuts"
                 icon={<Icon icon={KeyboardIcon} className="size-4" />}
@@ -383,7 +397,19 @@ export function ShellHeader({
         </>
       ) : (
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <GitHubLink className={PHONE_TAP} onOpen={onOpenGitHub} />
+          <ExternalLink
+            href={STATUS_URL}
+            label="Status"
+            icon={Activity01Icon}
+            className={PHONE_TAP}
+          />
+          <ExternalLink
+            href={REPO_URL}
+            label="View on GitHub"
+            icon={GithubIcon}
+            className={PHONE_TAP}
+            onOpen={onOpenGitHub}
+          />
           <HintButton
             label="Keyboard shortcuts"
             icon={<Icon icon={KeyboardIcon} className="size-4" />}
