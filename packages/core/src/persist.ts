@@ -8,6 +8,7 @@ import { Option, Schema } from "effect";
 import { clampNormalizedRect, createInitialVideoState, FULL_RECT } from "./operations";
 import { clampVideoFade, clampVideoSpeed, clampVideoVolume } from "./video/adjust";
 import type {
+  BackgroundPreset,
   ImageAnnotation,
   ImageDocumentState,
   VideoDocumentState,
@@ -58,19 +59,39 @@ const AnnotationSchema = Schema.Union([
   }),
 ]);
 
+/** Presets before the mesh backgrounds, each mapped to the closest current one. */
+const LEGACY_PRESET_MAP = {
+  hyper: "azure",
+  ember: "solstice",
+  mojave: "dusk",
+  emerald: "lagoon",
+  iris: "orchid",
+  obsidian: "graphite",
+  silver: "mist",
+  paper: "linen",
+} as const satisfies Record<string, BackgroundPreset>;
+
+const LEGACY_PRESETS = Object.keys(LEGACY_PRESET_MAP) as (keyof typeof LEGACY_PRESET_MAP)[];
+
+const isLegacyPreset = (preset: string): preset is keyof typeof LEGACY_PRESET_MAP =>
+  Object.hasOwn(LEGACY_PRESET_MAP, preset);
+
 const FrameSchema = Schema.Struct({
   enabled: Schema.Boolean,
   preset: Schema.Literals([
     "none",
-    "hyper",
-    "ember",
-    "mojave",
-    "emerald",
-    "iris",
-    "obsidian",
-    "silver",
-    "paper",
+    "dusk",
+    "azure",
+    "lagoon",
+    "canopy",
+    "solstice",
+    "orchid",
+    "midnight",
+    "graphite",
+    "mist",
+    "linen",
     "custom",
+    ...LEGACY_PRESETS,
   ]),
   customMode: Schema.Literals(["solid", "gradient"]),
   customColor: Schema.String,
@@ -119,7 +140,12 @@ export function parseImageDocumentState(
 ): ImageDocumentState | null {
   const decoded = decodeImageState(input);
   if (Option.isNone(decoded)) return null;
-  const state: ImageDocumentState = decoded.value;
+  const stored = decoded.value;
+  const preset = stored.frame.preset;
+  const state: ImageDocumentState = {
+    ...stored,
+    frame: { ...stored.frame, preset: isLegacyPreset(preset) ? LEGACY_PRESET_MAP[preset] : preset },
+  };
   if (state.crop.width <= 0 || state.crop.height <= 0) return null;
   const annotations = state.annotations
     .filter(

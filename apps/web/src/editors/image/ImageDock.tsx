@@ -5,7 +5,8 @@ import {
   annotationSizeFromPixels,
   annotationSizeToPixels,
   BACKGROUND_PRESETS,
-  customBackgroundCss,
+  canvasBackgroundCss,
+  customBackground,
   isDrawingTool,
   maxLayerRadius,
   selectedAnnotation,
@@ -68,15 +69,22 @@ const STYLES = ["pixelate", "blur", "blackout"] as const satisfies readonly Reda
 const isStyle = (value: unknown): value is RedactionStyle => STYLES.some((s) => s === value);
 
 const SWATCHES = [
-  "hyper",
-  "ember",
-  "mojave",
-  "emerald",
-  "iris",
-  "obsidian",
-  "silver",
-  "paper",
+  "dusk",
+  "azure",
+  "lagoon",
+  "canopy",
+  "solstice",
+  "orchid",
+  "midnight",
+  "graphite",
+  "mist",
+  "linen",
 ] as const satisfies readonly Exclude<BackgroundPreset, "none" | "custom">[];
+
+/** Each swatch's CSS, built once: the tray re-renders while sliders drag. */
+const SWATCH_CSS = Object.fromEntries(
+  SWATCHES.map((preset) => [preset, canvasBackgroundCss(BACKGROUND_PRESETS[preset].background)]),
+) as Record<(typeof SWATCHES)[number], string>;
 
 const CUSTOM_MODES = ["gradient", "solid"] as const satisfies readonly CustomBackgroundMode[];
 const isCustomMode = (value: unknown): value is CustomBackgroundMode =>
@@ -756,7 +764,7 @@ function FrameOptions({ state, onFrame, onTransparent, platform }: ImageDockProp
       min={0}
       max={512}
       compact
-      className="w-36 max-sm:w-auto"
+      className="w-36 max-lg:w-32 max-sm:w-auto"
       onChange={onPadding}
       onCommit={onPaddingCommit}
     />
@@ -768,7 +776,7 @@ function FrameOptions({ state, onFrame, onTransparent, platform }: ImageDockProp
       min={0}
       max={128}
       compact
-      className="w-32 max-sm:w-auto"
+      className="w-32 max-lg:w-28 max-sm:w-auto"
       onChange={onRadius}
       onCommit={onRadiusCommit}
     />
@@ -811,7 +819,13 @@ function FrameOptions({ state, onFrame, onTransparent, platform }: ImageDockProp
   return (
     <div className="flex flex-col gap-2">
       <TrayRow>
-        {swatches}
+        {/* Narrow windows: the swatches scroll so the sliders and Shadow stay in view. */}
+        <FadeScroller
+          className="max-w-[max(8rem,calc(100vw-36rem))] shrink-0"
+          innerClassName="gap-1.5 px-1 py-1"
+        >
+          {swatches}
+        </FadeScroller>
         <DockDivider />
         {padding}
         {radius}
@@ -898,7 +912,7 @@ const FrameBackgrounds = memo(function FrameBackgrounds({
           title={BACKGROUND_PRESETS[preset].label}
           onClick={() => commit({ preset })}
           className={SWATCH_CLASS}
-          style={{ background: BACKGROUND_PRESETS[preset].css }}
+          style={{ background: SWATCH_CSS[preset] }}
         />
       ))}
       <CustomBackground
@@ -935,7 +949,7 @@ function CustomBackground({
   commit: FramePatch;
 }) {
   const selected = frame.enabled && frame.preset === "custom";
-  const css = customBackgroundCss(frame);
+  const css = canvasBackgroundCss(customBackground(frame));
   return (
     <Popover.Root
       onOpenChange={(open) => {

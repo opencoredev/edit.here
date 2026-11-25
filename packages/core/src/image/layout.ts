@@ -5,7 +5,8 @@
  * The composition is the base image plus any image layers beside it. Without outlying layers
  * it is exactly the cropped base image, and the layout is what it has always been.
  */
-import { clamp, frameBackgroundCss } from "../operations";
+import { clamp, frameBackground } from "../operations";
+import type { CanvasBackground } from "./background";
 import type { FrameConfig, ImageExportFormat, NormalizedRect } from "../types";
 import { orientedSize, type ImageGeometry, type ImageSize } from "./geometry";
 
@@ -306,7 +307,7 @@ export function exportFormatInfo(format: ImageExportFormat): ExportFormatInfo {
 /** What to paint behind the image before drawing it. */
 export type ExportBackground =
   | { readonly kind: "transparent" }
-  | { readonly kind: "frame"; readonly css: string }
+  | { readonly kind: "frame"; readonly background: CanvasBackground }
   /** Formats without alpha get a white matte where the result would be transparent. */
   | { readonly kind: "matte" };
 
@@ -316,10 +317,10 @@ export function resolveExportBackground(args: {
   readonly format: ImageExportFormat;
 }): ExportBackground {
   const { frame } = args;
-  const frameCss = frame.enabled && frame.preset !== "none" ? frameBackgroundCss(frame) : null;
-  if (frameCss !== null && !args.transparent) return { kind: "frame", css: frameCss };
+  const background = frame.enabled && frame.preset !== "none" ? frameBackground(frame) : null;
+  if (background !== null && !args.transparent) return { kind: "frame", background };
   if (exportFormatInfo(args.format).alpha) return { kind: "transparent" };
-  return frameCss === null ? { kind: "matte" } : { kind: "frame", css: frameCss };
+  return background === null ? { kind: "matte" } : { kind: "frame", background };
 }
 
 /** `shot.final.png` + JPEG → `shot.final-edited.jpg`. */

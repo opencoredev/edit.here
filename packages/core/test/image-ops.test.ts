@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   addImageRedaction,
   clampNormalizedRect,
-  BACKGROUND_PRESETS,
   createInitialImageState,
   createRedaction,
   DEFAULT_FRAME_CONFIG,
@@ -145,15 +144,15 @@ describe("image document", () => {
         customAngle: 90,
       }),
     ).toBe("linear-gradient(90deg, #123456 0%, #abcdef 100%)");
-    expect(frameBackgroundCss({ ...DEFAULT_FRAME_CONFIG, preset: "hyper" })).toBe(
-      BACKGROUND_PRESETS.hyper.css,
-    );
+    const dusk = frameBackgroundCss({ ...DEFAULT_FRAME_CONFIG, preset: "dusk" });
+    expect(dusk.startsWith("radial-gradient(")).toBe(true);
+    expect(dusk.endsWith(", #212759")).toBe(true);
   });
 
-  it("defaults to a framed Hyper gradient and pixelated redactions", () => {
+  it("defaults to a framed Dusk mesh and pixelated redactions", () => {
     const state = createInitialImageState();
     expect(state.redactionStyle).toBe("pixelate");
-    expect(state.frame.preset).toBe("hyper");
+    expect(state.frame.preset).toBe("dusk");
     expect(state.frame.customMode).toBe("gradient");
   });
 });

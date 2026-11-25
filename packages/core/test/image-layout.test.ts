@@ -280,7 +280,7 @@ describe("image history", () => {
     const { frame } = createImageHistory(SOURCE).present;
     expect(frame.padding).toBe(360);
     expect(frame.radius).toBe(90);
-    expect(frame.preset).toBe("hyper");
+    expect(frame.preset).toBe("dusk");
   });
 
   it("records document changes and ignores view changes", () => {

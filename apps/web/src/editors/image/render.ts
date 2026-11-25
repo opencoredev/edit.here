@@ -26,10 +26,8 @@ import {
   TEXT_LINE_HEIGHT,
   coverPixels,
   exportFormatInfo,
-  gradientLine,
   intersectRects,
   orientationMatrix,
-  parseCanvasBackground,
   planRedactionRepaint,
   redactionCellSize,
   resolveExportBackground,
@@ -52,6 +50,7 @@ import {
   type RedactionFootprint,
   type RedactionRepaintPlan,
 } from "@edit-here/core";
+import { paintCanvasBackground } from "./paint-background";
 
 export type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -830,21 +829,9 @@ function paintBackground(ctx: Ctx, background: ExportBackground, size: ImageSize
       ctx.fillStyle = MATTE;
       ctx.fillRect(0, 0, size.width, size.height);
       return;
-    case "frame": {
-      const parsed = parseCanvasBackground(background.css);
-      if (parsed === null) {
-        ctx.fillStyle = background.css;
-      } else if (parsed.kind === "solid") {
-        ctx.fillStyle = parsed.color;
-      } else {
-        const line = gradientLine(parsed.angle, size);
-        const gradient = ctx.createLinearGradient(line.x0, line.y0, line.x1, line.y1);
-        for (const stop of parsed.stops) gradient.addColorStop(stop.offset, stop.color);
-        ctx.fillStyle = gradient;
-      }
-      ctx.fillRect(0, 0, size.width, size.height);
+    case "frame":
+      paintCanvasBackground(ctx, background.background, size);
       return;
-    }
     default: {
       const _exhaustive: never = background;
       return _exhaustive;
