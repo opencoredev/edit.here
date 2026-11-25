@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import middleware, { REPORT_BURST, agentHit, createReportLimiter } from "../../../middleware";
+import { REPORT_BURST, agentHit, createReportLimiter } from "../../../middleware";
 
 const SECRET = "holiday-photo.png";
 
 function request(path: string, headers: Record<string, string>, host = "edit.here"): Request {
   return new Request(`https://${host}${path}`, { headers });
+}
+
+async function freshMiddleware() {
+  vi.resetModules();
+  return (await import("../../../middleware")).default;
 }
 
 const agentOf = (userAgent: string) =>
@@ -37,6 +42,22 @@ describe("report limiter", () => {
     expect(allow()).toBe(false);
     time = 999;
     expect(allow()).toBe(false);
+    time = 10_999;
+    expect(allow()).toBe(false);
+    time = 11_000;
+    expect(allow()).toBe(true);
+  });
+
+  it("refills a whole token after a second split into uneven steps", () => {
+    let time = 0;
+    const allow = createReportLimiter(1, 1, () => time);
+    expect(allow()).toBe(true);
+    for (const step of [300, 600]) {
+      time += step;
+      expect(allow()).toBe(false);
+    }
+    time += 100;
+    expect(allow()).toBe(true);
   });
 });
 
@@ -76,6 +97,7 @@ describe("agent middleware", () => {
   });
 
   it("always continues the request, and sends no raw header text to Databuddy", async () => {
+    const middleware = await freshMiddleware();
     vi.stubEnv("VITE_DATABUDDY_CLIENT_ID", "site-1");
     const bodies: string[] = [];
     vi.stubGlobal(
@@ -100,8 +122,9 @@ describe("agent middleware", () => {
     expect(bodies[0]).not.toContain("1.2.3.4");
   });
 
-  it("stops reporting a flood once the bucket is empty but still passes every request", () => {
+  it("stops reporting a flood once the bucket is empty but still passes every request", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
+    const middleware = await freshMiddleware();
     vi.stubEnv("VITE_DATABUDDY_CLIENT_ID", "site-1");
     vi.stubGlobal(
       "fetch",
@@ -113,8 +136,7 @@ describe("agent middleware", () => {
       const response = middleware(request("/", { "user-agent": "GPTBot/1.2" }), context);
       expect(response.headers.get("x-middleware-next")).toBe("1");
     }
-    expect(reports).toBeGreaterThan(0);
-    expect(reports).toBeLessThanOrEqual(REPORT_BURST);
+    expect(reports).toBe(REPORT_BURST);
     const drained = reports;
     expect(
       middleware(request("/", { "user-agent": "GPTBot/1.2" }), context).headers.get(
@@ -125,5 +147,28 @@ describe("agent middleware", () => {
     vi.advanceTimersByTime(1_000);
     middleware(request("/", { "user-agent": "GPTBot/1.2" }), context);
     expect(reports).toBe(drained + 1);
+  });
+
+  it("spends no token when the runtime gives no waitUntil", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const middleware = await freshMiddleware();
+    vi.stubEnv("VITE_DATABUDDY_CLIENT_ID", "site-1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("ok")),
+    );
+    for (let i = 0; i < REPORT_BURST * 2; i++) {
+      expect(
+        middleware(request("/", { "user-agent": "GPTBot/1.2" })).headers.get("x-middleware-next"),
+      ).toBe("1");
+      expect(
+        middleware(request("/", { "user-agent": "GPTBot/1.2" }), {}).headers.get(
+          "x-middleware-next",
+        ),
+      ).toBe("1");
+    }
+    let reports = 0;
+    middleware(request("/", { "user-agent": "GPTBot/1.2" }), { waitUntil: () => void reports++ });
+    expect(reports).toBe(1);
   });
 });

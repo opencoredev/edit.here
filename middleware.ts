@@ -81,14 +81,17 @@ export function createReportLimiter(
   refillPerSecond: number,
   now: () => number,
 ): () => boolean {
-  let tokens = burst;
+  const capacity = burst * 1000;
+  let milliTokens = capacity;
   let last = now();
   return () => {
     const current = now();
-    tokens = Math.min(burst, tokens + (Math.max(0, current - last) / 1000) * refillPerSecond);
-    last = current;
-    if (tokens < 1) return false;
-    tokens -= 1;
+    if (current > last) {
+      milliTokens = Math.min(capacity, milliTokens + Math.floor(current - last) * refillPerSecond);
+      last = current;
+    }
+    if (milliTokens < 1000) return false;
+    milliTokens -= 1000;
     return true;
   };
 }
@@ -120,7 +123,9 @@ export default function middleware(request: Request, context?: WaitUntil): Respo
   try {
     const websiteId = runtimeEnv().VITE_DATABUDDY_CLIENT_ID?.trim() ?? "";
     const hit = websiteId === "" ? null : agentHit(request);
-    if (hit !== null && allowReport()) context?.waitUntil?.(trackAgents(hit, { websiteId }));
+    if (hit !== null && context?.waitUntil !== undefined && allowReport()) {
+      context.waitUntil(trackAgents(hit, { websiteId }));
+    }
   } catch {
     // Reporting never changes the response.
   }
