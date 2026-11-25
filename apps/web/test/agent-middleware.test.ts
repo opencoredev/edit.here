@@ -7,6 +7,9 @@ function request(path: string, headers: Record<string, string>, host = "edit.her
   return new Request(`https://${host}${path}`, { headers });
 }
 
+const agentOf = (userAgent: string) =>
+  Reflect.get(agentHit(request("/", { "user-agent": userAgent }))?.headers ?? {}, "user-agent");
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
@@ -29,6 +32,13 @@ describe("agent middleware", () => {
       url: "/llms.txt",
       headers: { host: "edit.here", "user-agent": "GPTBot", accept: "text/markdown" },
     });
+  });
+
+  it("names agents with fixed tokens, never the request's own suffixes or versions", () => {
+    expect(agentOf(`GitHubCopilotChat-${SECRET}/1.0`)).toBe("GitHubCopilot");
+    expect(agentOf("Claude-User (claude-code/9.9.9; acme-corp)")).toBe("Claude-User (claude-code/");
+    expect(agentOf(`amazon-Quick-on-behalf-of-${SECRET}`)).toBeUndefined();
+    expect(agentOf("Cursor/3.1.4 (acme)")).toBe("Cursor/1.0 (");
   });
 
   it("reports other paths as /other and ignores people, opt-outs and previews", () => {
