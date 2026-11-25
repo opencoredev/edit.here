@@ -36,7 +36,7 @@ Files are opened, edited and exported on your device and never sent anywhere. Th
 
 ## Run it yourself
 
-Requires Node 22.12 or newer and pnpm 10.
+Requires Node 22.18 or newer and pnpm 10.
 
 ```sh
 git clone https://github.com/opencoredev/edit.here.git
