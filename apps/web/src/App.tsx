@@ -491,7 +491,7 @@ export function App() {
         !snapshot.matches("editing")
       )
         return;
-      const { name, kind } = session;
+      const { kind } = session;
       // The format the export really uses ("png", "mp4"), never anything from the file.
       const reportedFormat = resolveExportFormat(format, actions.exportFormats);
       const formatLabel =
@@ -501,8 +501,8 @@ export function App() {
       const label = formatLabel === undefined ? actions.exportLabel : `Export ${formatLabel}`;
       send(label === undefined ? { type: "export.start" } : { type: "export.start", label });
       try {
-        await exportFile(format);
-        send({ type: "export.done", message: `Exported ${name}` });
+        const { fileName } = await exportFile(format);
+        send({ type: "export.done", message: `Exported ${fileName}` });
         if (reportedFormat !== undefined) {
           trackEvent("export_completed", { kind, format: reportedFormat });
         }

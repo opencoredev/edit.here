@@ -20,11 +20,11 @@ export type EditorToolbarActions = {
   copy?: () => void | Promise<void>;
   /**
    * Render and download the result, in `format` (an `exportFormats` option id) when given, else
-   * in the selected format. May return a promise: the shell shows progress while it is pending
-   * and shows the success or error toast, so editors should not toast on their own. Reject
-   * (throw) to report a failure.
+   * in the selected format. The shell shows progress while the promise is pending and then the
+   * success toast, naming the file that was written, or the error toast; editors don't toast on
+   * their own. Reject (throw) to report a failure.
    */
-  exportFile?: (format?: string) => void | Promise<void>;
+  exportFile?: (format?: string) => Promise<ExportedFile>;
   undo?: () => void;
   redo?: () => void;
   canUndo?: boolean;
@@ -49,6 +49,12 @@ export type EditorToolbarActions = {
   appendLabel?: string;
   /** One line under `appendLabel`, e.g. "Place it next to this image". */
   appendDetail?: string;
+};
+
+/** The file an export downloaded. */
+export type ExportedFile = {
+  /** The name it was saved under, with the extension of the bytes it holds. */
+  readonly fileName: string;
 };
 
 export type ExportFormatChoice = {

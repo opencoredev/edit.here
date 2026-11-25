@@ -119,11 +119,16 @@ import {
 import { Progress } from "../../components/graphical/index";
 import { HintButton } from "../../components/HintButton";
 import { numberedHint } from "../../lib/tool-keys";
-import { detectPlatform, isEditableTarget, type Platform } from "../../lib/platform";
+import {
+  detectPlatform,
+  isEditableTarget,
+  isTouchPrimary,
+  type Platform,
+} from "../../lib/platform";
 import { usePersist } from "../../lib/use-persist";
 import { useObjectUrl } from "../../lib/use-object-url";
 import { useIsNarrow } from "../../lib/use-is-narrow";
-import type { EditorCommonProps, EditorToolbarActions } from "../types";
+import type { EditorCommonProps, EditorToolbarActions, ExportedFile } from "../types";
 import { InlineSlider, Segmented } from "../image/controls";
 import { CropOverlay } from "./CropOverlay";
 import { downloadBlob, exportVideo } from "./export-video";
@@ -779,7 +784,7 @@ function VideoWorkspace({
     });
   }, [onStatus]);
 
-  const exportFile = useCallback(async () => {
+  const exportFile = useCallback(async (): Promise<ExportedFile> => {
     const plan = planVideoExport({ state: docRef.current, frame });
     if (plan.kind === "empty") throw new Error("Every segment is cut. Restore one to export.");
     setShuttle(SHUTTLE_PAUSED);
@@ -793,15 +798,20 @@ function VideoWorkspace({
         width: probe.width,
         height: probe.height,
         frameRate: probe.frameRate,
+        keyHints: !narrow && !isTouchPrimary(),
         onProgress: setExportProgress,
       });
-      downloadBlob(result.blob, videoExportFileName(meta.name, plan.format));
+      const fileName = videoExportFileName(meta.name, result.format);
+      downloadBlob(result.blob, fileName);
+      // WebM written in place of MP4 becomes the selection, so Export names what it writes.
+      if (result.format !== plan.format) commands.setFormat(result.format);
       // After the shell's success toast, so the warning is the one left on screen.
       for (const warning of result.warnings) window.setTimeout(() => onStatus(warning, "info"), 0);
+      return { fileName };
     } finally {
       setExportProgress(null);
     }
-  }, [file, frame, meta.name, onStatus, probe]);
+  }, [commands, file, frame, meta.name, narrow, onStatus, probe]);
 
   // Header actions: stable wrappers so registering doesn't loop through the shell.
   const latest = useRef({ copyFrame, exportFile });

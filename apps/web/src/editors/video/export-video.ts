@@ -16,6 +16,7 @@ import {
   firstSupported,
   isCopyExact,
   mapIntervalToRanges,
+  resolveVideoExportFormat,
   softClipSample,
   timeScaleChannel,
   videoEncodeCandidates,
@@ -52,6 +53,8 @@ import type { SourceAudioTrack } from "./probe";
 
 export type ExportResult = {
   readonly blob: Blob;
+  /** The container written: the plan's, or WebM when MP4's audio can't be encoded here. */
+  readonly format: VideoExportFormat;
   /** Human notes about tracks that were dropped, for a warning toast. */
   readonly warnings: readonly string[];
 };
@@ -64,6 +67,8 @@ type ExportArgs = {
   readonly width: number;
   readonly height: number;
   readonly frameRate: number;
+  /** Name keyboard shortcuts in error messages; off on touch and phone layouts. */
+  readonly keyHints: boolean;
   readonly onProgress: (fraction: number) => void;
 };
 
@@ -273,6 +278,7 @@ async function convert(args: {
   readonly trim: Trim;
   readonly video: ConversionVideoOptions;
   readonly audio: ConversionAudioOptions;
+  readonly keyHints: boolean;
   readonly onProgress: (fraction: number) => void;
 }): Promise<Converted> {
   const output = new Output({
@@ -301,7 +307,7 @@ async function convert(args: {
   );
   if (audioDiscards.some((d) => d.reason === "no_encodable_target_codec")) {
     // Never ship a silent file, or a codec the container's players reject, without asking.
-    throw new Error(audioEncodeUnsupportedMessage(args.format));
+    throw new Error(audioEncodeUnsupportedMessage(args.format, args.keyHints));
   }
   conversion.onProgress = (progress) => args.onProgress(Math.min(1, Math.max(0, progress)));
   await conversion.execute();
@@ -343,6 +349,7 @@ async function tryCopyTrim(args: {
     // Same codec as the source and no transforms, so mediabunny copies the packets.
     video: { codec: sourceCodec },
     audio: args.audio,
+    keyHints: exportArgs.keyHints,
     onProgress: exportArgs.onProgress,
   });
   const span = await videoSpan(copied.buffer);
@@ -392,27 +399,44 @@ async function reencode(args: {
       ...(retime === null ? {} : { process: retimeVideo(retime) }),
     },
     audio: args.audio,
+    keyHints: args.exportArgs.keyHints,
     onProgress: args.exportArgs.onProgress,
   });
 }
 
-export async function exportVideo(args: ExportArgs): Promise<ExportResult> {
-  const { plan } = args;
-  const ranges: readonly ExportRange[] = plan.kind === "trim" ? [plan.range] : plan.ranges;
+export async function exportVideo(selected: ExportArgs): Promise<ExportResult> {
+  const ranges: readonly ExportRange[] =
+    selected.plan.kind === "trim" ? [selected.plan.range] : selected.plan.ranges;
   const first = ranges[0];
   const last = ranges.at(-1);
   if (first === undefined || last === undefined) throw new Error("Nothing to export.");
+  const audioRanges = { ranges, fadeIn: selected.plan.fadeIn, fadeOut: selected.plan.fadeOut };
+  const encodableAudio = await encodableAudioCodecs();
+  const target = await resolveVideoExportFormat({
+    ...audioRanges,
+    selected: selected.plan.format,
+    source: selected.sourceAudio,
+    encodable: encodableAudio,
+    canWriteWebmVideo: async () =>
+      (await encodableVideoCodecs({ ...selected, plan: { ...selected.plan, format: "webm" } }))
+        .size > 0,
+  });
+  const args: ExportArgs =
+    target.kind === "fallback"
+      ? { ...selected, plan: { ...selected.plan, format: target.format } }
+      : selected;
+  const { plan } = args;
   const trim: Trim = { start: first.start, end: last.end };
   const retime: Retime = { ranges, trimStart: trim.start };
   const framesMove = ranges.length > 1 || ranges.some((r) => r.speed !== 1);
-  const audioRanges = { ranges, fadeIn: plan.fadeIn, fadeOut: plan.fadeOut };
   const samplesChange = audioNeedsProcessing(audioRanges);
 
   const audioChoice = chooseAudioExport({
     ...audioRanges,
     format: plan.format,
     source: args.sourceAudio,
-    encodable: await encodableAudioCodecs(),
+    encodable: encodableAudio,
+    keyHints: args.keyHints,
   });
   if (audioChoice.kind === "unsupported") throw new Error(audioChoice.message);
   const audio = audioOptions({
@@ -420,7 +444,10 @@ export async function exportVideo(args: ExportArgs): Promise<ExportResult> {
     plan,
     retime: samplesChange ? retime : null,
   });
-  const audioWarnings = audioChoice.kind === "drop" ? [audioChoice.warning] : [];
+  const audioWarnings = [
+    ...(target.kind === "fallback" ? [target.notice] : []),
+    ...(audioChoice.kind === "drop" ? [audioChoice.warning] : []),
+  ];
 
   const input = new Input({ source: new BlobSource(args.file), formats: ALL_FORMATS });
   try {
@@ -439,6 +466,7 @@ export async function exportVideo(args: ExportArgs): Promise<ExportResult> {
       }));
     return {
       blob: new Blob([result.buffer], { type: result.mimeType }),
+      format: plan.format,
       warnings: [...audioWarnings, ...result.warnings],
     };
   } finally {

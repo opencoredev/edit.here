@@ -70,4 +70,21 @@ describe("image encoders", () => {
     expect(encoders.exportFormatOfBlob(new Blob([], { type: "image/png" }))).toBe("image/png");
     expect(encoders.exportFormatOfBlob(new Blob([], { type: "image/gif" }))).toBeNull();
   });
+
+  it("names the export toast's file for the format written, not the source", async () => {
+    const { encoders } = await withCanvas(["image/jpeg", "image/webp"]);
+    const named = (type: string, requested: "image/png" | "image/jpeg" | "image/webp") =>
+      encoders.exportedImageFileName({
+        sourceName: "sample-dashboard.png",
+        blob: new Blob([], { type }),
+        requested,
+      });
+    expect(named("image/jpeg", "image/jpeg")).toBe("sample-dashboard-edited.jpg");
+    expect(named("image/webp", "image/webp")).toBe("sample-dashboard-edited.webp");
+    expect(named("image/png", "image/png")).toBe("sample-dashboard-edited.png");
+    // An encoder that hands back PNG for a WebP request downloads, and is announced, as .png.
+    expect(named("image/png", "image/webp")).toBe("sample-dashboard-edited.png");
+    // Bytes of no known type keep the requested extension.
+    expect(named("", "image/jpeg")).toBe("sample-dashboard-edited.jpg");
+  });
 });

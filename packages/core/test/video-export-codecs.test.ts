@@ -6,6 +6,7 @@ import {
   chooseVideoEncoder,
   findCopyStart,
   isCopyExact,
+  resolveVideoExportFormat,
   type AudioRanges,
   type ExportAudioCodec,
 } from "../src/index";
@@ -27,13 +28,14 @@ function choose({
   contiguous,
   adjust,
   ...rest
-}: Omit<Parameters<typeof chooseAudioExport>[0], keyof AudioRanges> & {
+}: Omit<Parameters<typeof chooseAudioExport>[0], keyof AudioRanges | "keyHints"> & {
   readonly muted: boolean;
   readonly contiguous: boolean;
   readonly adjust: Adjust;
 }) {
   const range = { speed: adjust.speed, volume: adjust.volume, muted };
   return chooseAudioExport({
+    keyHints: true,
     ...rest,
     ranges: contiguous ? [range] : [range, range],
     fadeIn: adjust.fadeIn,
@@ -115,6 +117,23 @@ describe("chooseAudioExport", () => {
     ).toEqual(choice);
   });
 
+  it("leaves the mute shortcut out of the refusal on touch and phone layouts", () => {
+    const refusal = chooseAudioExport({
+      format: "mp4",
+      source: aac,
+      encodable: opusOnly,
+      ranges: [{ speed: 1, volume: 0.5, muted: false }],
+      fadeIn: 0,
+      fadeOut: 0,
+      keyHints: false,
+    });
+    expect(refusal).toEqual({
+      kind: "unsupported",
+      message: "This browser can't encode AAC audio for MP4. Export as WebM, or mute the audio.",
+    });
+    expect(audioEncodeUnsupportedMessage("webm", false)).not.toContain("(M)");
+  });
+
   it("copies Opus or Vorbis into WebM and encodes Opus otherwise", () => {
     const base = { format: "webm", muted: false, encodable: opusOnly } as const;
     expect(choose({ adjust: untouched, ...base, source: opus, contiguous: true })).toEqual({
@@ -140,7 +159,7 @@ describe("chooseAudioExport", () => {
         contiguous: true,
         encodable: new Set(),
       }),
-    ).toEqual({ kind: "unsupported", message: audioEncodeUnsupportedMessage("webm") });
+    ).toEqual({ kind: "unsupported", message: audioEncodeUnsupportedMessage("webm", true) });
   });
 
   it("drops audio it can neither copy nor decode, with a warning", () => {
@@ -265,7 +284,88 @@ describe("chooseAudioExport with audio adjustments", () => {
   it("refuses when an adjustment needs an encoder the browser lacks", () => {
     expect(choose({ ...base, encodable: opusOnly, adjust: { ...untouched, fadeIn: 1 } })).toEqual({
       kind: "unsupported",
-      message: audioEncodeUnsupportedMessage("mp4"),
+      message: audioEncodeUnsupportedMessage("mp4", true),
     });
+  });
+});
+
+const webmWorks = async () => true;
+
+describe("resolveVideoExportFormat", () => {
+  const edited = {
+    ranges: [{ speed: 1, volume: 0.5, muted: false }],
+    fadeIn: 0,
+    fadeOut: 0,
+  } as const;
+  it("falls back from MP4 to WebM when this browser has no AAC encoder", async () => {
+    const choice = await resolveVideoExportFormat({
+      ...edited,
+      selected: "mp4",
+      source: opus,
+      encodable: opusOnly,
+      canWriteWebmVideo: webmWorks,
+    });
+    expect(choice).toEqual({
+      kind: "fallback",
+      format: "webm",
+      notice: "This browser can't encode AAC audio for MP4, so it was saved as WebM instead.",
+    });
+  });
+
+  it("keeps MP4 when its audio works here, without asking about WebM video", async () => {
+    let asked = 0;
+    const canWriteWebmVideo = async () => {
+      asked++;
+      return true;
+    };
+    const cases = [
+      { ...edited, source: aac, encodable: both },
+      // An untouched AAC track is copied, so no encoder is needed.
+      { ranges: [{ speed: 1, volume: 1, muted: false }], fadeIn: 0, fadeOut: 0, source: aac },
+      { ...edited, source: null },
+      { ranges: [{ speed: 1, volume: 0.5, muted: true }], fadeIn: 0, fadeOut: 0, source: aac },
+    ];
+    for (const audio of cases) {
+      expect(
+        await resolveVideoExportFormat({
+          encodable: opusOnly,
+          ...audio,
+          selected: "mp4",
+          canWriteWebmVideo,
+        }),
+      ).toEqual({ kind: "selected", format: "mp4" });
+    }
+    expect(asked).toBe(0);
+  });
+
+  it("keeps MP4, and its error, when WebM can't be written either", async () => {
+    const noWebmVideo = await resolveVideoExportFormat({
+      ...edited,
+      selected: "mp4",
+      source: aac,
+      encodable: opusOnly,
+      canWriteWebmVideo: async () => false,
+    });
+    const noAudioEncoder = await resolveVideoExportFormat({
+      ...edited,
+      selected: "mp4",
+      source: aac,
+      encodable: new Set(),
+      canWriteWebmVideo: webmWorks,
+    });
+    expect(noWebmVideo).toEqual({ kind: "selected", format: "mp4" });
+    expect(noAudioEncoder).toEqual({ kind: "selected", format: "mp4" });
+  });
+
+  it("never changes a WebM selection", async () => {
+    expect(
+      await resolveVideoExportFormat({
+        ...edited,
+        selected: "webm",
+        source: aac,
+        encodable: new Set(),
+        canWriteWebmVideo: webmWorks,
+      }),
+    ).toEqual({ kind: "selected", format: "webm" });
   });
 });

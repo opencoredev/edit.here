@@ -28,6 +28,7 @@ import { formatBytes, type Platform } from "../lib/platform";
 import { REPO_URL } from "../lib/repo";
 import { Button, ButtonContent, Menu, Tooltip } from "./graphical/index";
 import { HintButton } from "./HintButton";
+import { useIsNarrow } from "../lib/use-is-narrow";
 
 const KIND_ICONS: Record<MediaKind, IconSvgElement> = {
   image: Image01Icon,
@@ -144,9 +145,10 @@ function Logo() {
 }
 
 /**
- * Minimal header. Desktop: logo and the open file on the leading side; undo, redo and Export on
- * the trailing side. Phones with a file open: Close, then undo and redo, then Export; the file
- * name moves into the overflow menu. Everything else (copy, open, theme, the GitHub link, and
+ * Minimal header. Desktop: logo and the open file on the leading side; undo, redo, Copy (when the
+ * editor's main action is copy) and the labeled Export split button on the trailing side. Phones
+ * with a file open: Close, then undo and redo, then Copy and a "Save" button; the file name moves
+ * into the overflow menu. Everything else (copy, open, theme, the GitHub link, and
  * shortcuts on phones) sits in that one menu; desktop keeps GitHub and shortcuts buttons next to
  * undo. Home shows status, GitHub, shortcuts and theme buttons on the trailing side.
  */
@@ -170,6 +172,8 @@ export function ShellHeader({
   const copyDisabled = actions.copy === undefined || actions.busy === true;
   const copyFirst = actions.primaryAction === "copy" && actions.copy !== undefined;
   const exportLabel = actions.exportLabel ?? "Export";
+  // Phones have room for one short word; it names the action people look for to keep their edit.
+  const saveLabel = useIsNarrow() ? "Save" : exportLabel;
   const themeLabel = colorMode === "dark" ? "Switch to light mode" : "Switch to dark mode";
   const themeGlyph = colorMode === "dark" ? Sun03Icon : Moon02Icon;
 
@@ -259,44 +263,40 @@ export function ShellHeader({
             />
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            {copyFirst ? (
+              <Button
+                variant="secondary"
+                onClick={onCopy}
+                disabled={copyDisabled}
+                className={`h-8! sm:ml-1 ${PHONE_TAP}`}
+                aria-label={copied ? "Copied" : (actions.copyLabel ?? "Copy")}
+              >
+                <ButtonContent loading={false} contentKey={copied ? "copied" : "copy"}>
+                  <Icon icon={copied ? Tick02Icon : Copy01Icon} className="size-4 max-sm:size-5" />
+                  {/* Fixed width, so the button doesn't jump between the two words. */}
+                  <span className="hidden min-w-[6ch] text-start sm:inline">
+                    {copied ? "Copied" : "Copy"}
+                  </span>
+                </ButtonContent>
+              </Button>
+            ) : null}
             {/* One machined control: both halves share a height and a single inner divider. */}
             <div className="inline-flex items-stretch sm:ml-1">
-              {copyFirst ? (
-                <Button
-                  variant="primary"
-                  onClick={onCopy}
-                  disabled={copyDisabled}
-                  className="export-split-left h-8! max-sm:h-10! max-sm:px-3!"
-                  aria-label={copied ? "Copied" : (actions.copyLabel ?? "Copy")}
-                >
-                  <ButtonContent loading={false} contentKey={copied ? "copied" : "copy"}>
-                    <Icon
-                      icon={copied ? Tick02Icon : Copy01Icon}
-                      className="size-4 max-sm:size-5"
-                    />
-                    {/* Fixed width, so the button doesn't jump between the two words. */}
-                    <span className="hidden min-w-[6ch] text-start sm:inline">
-                      {copied ? "Copied" : "Copy"}
-                    </span>
-                  </ButtonContent>
-                </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  onClick={() => onExport()}
-                  disabled={exportDisabled}
-                  className={[
-                    "h-8! max-sm:h-10! max-sm:px-3!",
-                    actions.exportFormats === undefined ? "" : "export-split-left",
-                  ].join(" ")}
-                  aria-label={exportLabel}
-                >
-                  <ButtonContent loading={exporting} contentKey="export">
-                    <Icon icon={Download01Icon} className="size-4 max-sm:size-5" />
-                    <span className="hidden sm:inline">{exportLabel}</span>
-                  </ButtonContent>
-                </Button>
-              )}
+              <Button
+                variant="primary"
+                onClick={() => onExport()}
+                disabled={exportDisabled}
+                className={[
+                  "h-8! max-sm:h-10! max-sm:px-3!",
+                  actions.exportFormats === undefined ? "" : "export-split-left",
+                ].join(" ")}
+                aria-label={saveLabel}
+              >
+                <ButtonContent loading={exporting} contentKey="export">
+                  <Icon icon={Download01Icon} className="size-4 max-sm:size-5" />
+                  <span>{saveLabel}</span>
+                </ButtonContent>
+              </Button>
               {actions.exportFormats === undefined ? null : copyFirst ? (
                 <DirectExportMenu
                   choice={actions.exportFormats}

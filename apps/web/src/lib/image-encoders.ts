@@ -4,6 +4,7 @@
  * as `name.webp.png`. Exports offer only the formats that really encode.
  */
 import {
+  exportFileName,
   IMAGE_EXPORT_FORMATS,
   type ExportFormatInfo,
   type ImageExportFormat,
@@ -44,4 +45,16 @@ export function encodableImageFormat(format: ImageExportFormat): ImageExportForm
 /** The export format `blob` really holds, from its MIME type; null for any other type. */
 export function exportFormatOfBlob(blob: Blob): ImageExportFormat | null {
   return IMAGE_EXPORT_FORMATS.find((info) => info.format === blob.type)?.format ?? null;
+}
+
+/**
+ * The name an image export downloads under: the source name with the extension of the format
+ * the bytes really hold (an encoder can hand back PNG for another request), else `requested`.
+ */
+export function exportedImageFileName(args: {
+  readonly sourceName: string;
+  readonly blob: Blob;
+  readonly requested: ImageExportFormat;
+}): string {
+  return exportFileName(args.sourceName, exportFormatOfBlob(args.blob) ?? args.requested);
 }
