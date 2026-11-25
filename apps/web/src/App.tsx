@@ -18,6 +18,7 @@ import {
   useState,
 } from "react";
 import { DropOverlay, type DropIntent } from "./components/DropOverlay";
+import { FlagsRoot } from "./components/FlagsRoot";
 import { DropzoneHome } from "./components/DropzoneHome";
 import { EditorErrorBoundary } from "./components/EditorErrorBoundary";
 import { KeybindsDialog } from "./components/KeybindsDialog";
@@ -682,6 +683,7 @@ export function App() {
     // loaded later, so they animate from the first frame exactly as `motion` components would;
     // `m` keeps drag and layout code (which only the editors use) off Home.
     <LazyMotion features={domAnimation}>
+      <FlagsRoot>
       <GraphicalProvider document={theme} colorMode={colorMode}>
         <Tooltip.Provider delay={350}>
           <div className="app-root" data-state={String(snapshot.value)}>
@@ -785,6 +787,7 @@ export function App() {
           </div>
         </Tooltip.Provider>
       </GraphicalProvider>
+      </FlagsRoot>
     </LazyMotion>
   );
 }
