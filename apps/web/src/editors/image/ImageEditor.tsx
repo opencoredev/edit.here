@@ -88,6 +88,7 @@ import { RedactionOverlay } from "./RedactionOverlay";
 import { exportImage, warmExportWorker } from "./export-client";
 import { renderThumbnailCanvas, type LayerSources } from "./render";
 import { encodeThumbnailCanvas, THUMBNAIL_EDGE } from "../../lib/thumbnail";
+import { trackEvent } from "../../lib/analytics";
 import type { StageViewportController } from "./use-stage-viewport";
 import {
   closeDecodedImage,
@@ -317,6 +318,7 @@ function ImageWorkspace({
   // --- commands ---------------------------------------------------------------------------
   const setTool = useCallback(
     (tool: ImageTool) => {
+      if (tool !== "select") trackEvent("tool_used", { kind: "image", tool });
       setDraft(null);
       canvasDraft.set(null);
       const before = historyRef.current.present;

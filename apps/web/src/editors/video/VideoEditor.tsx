@@ -139,6 +139,7 @@ import { probeVideo, type ProbeResult, type VideoProbe } from "./probe";
 import { createSeeker, type Seeker } from "./seeker";
 import { Timeline, type ScrubPhase, type TrimBounds, type TrimEdge } from "./Timeline";
 import { randomId } from "../../lib/new-id";
+import { trackEvent } from "../../lib/analytics";
 
 type ProbeState = { readonly kind: "loading" } | ProbeResult;
 
@@ -647,6 +648,7 @@ function VideoWorkspace({
       },
       resetTrim: () => setSegments(restoreAllVideoSegments(docRef.current.segments)),
       toggleTool: (tool) => {
+        trackEvent("tool_used", { kind: "video", tool });
         if (tool !== "crop") {
           commit((s) => toggleVideoTool(s, tool));
           return;

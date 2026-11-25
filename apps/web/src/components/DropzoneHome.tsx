@@ -25,6 +25,8 @@ import type { Platform } from "../lib/platform";
 import { Keys } from "./Keys";
 import type { RecentWorkspace } from "../lib/workspace-store";
 import { RecentProjects } from "./RecentProjects";
+import { useFlag } from "@databuddy/sdk/react";
+import { homeHeadline, homeHeadlineFlag } from "../lib/flags";
 
 type DropzoneHomeProps = {
   platform: Platform;
@@ -73,6 +75,7 @@ export function DropzoneHome({
   onClearRecents,
   onDismissError,
 }: DropzoneHomeProps) {
+  const headline = homeHeadline(useFlag(homeHeadlineFlag));
   // The whole plate opens the picker; the button inside stays the keyboard path.
   const onPlateClick = (event: MouseEvent<HTMLDivElement>) => {
     if (opening) return;
@@ -89,7 +92,7 @@ export function DropzoneHome({
       >
         <div className="flex flex-col items-center gap-3 text-center">
           <h1 className="text-[32px] leading-[1.08] font-semibold tracking-[-0.03em] text-balance text-ink sm:text-[42px] sm:leading-[1.08]">
-            Drop anything. Edit here.
+            {headline}
           </h1>
           <p className="font-mono text-xs tracking-normal text-ink-muted">
             100% local · Zero uploads · Works offline

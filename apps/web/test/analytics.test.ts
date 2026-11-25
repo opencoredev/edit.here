@@ -3,7 +3,9 @@ import {
   CANONICAL_ORIGIN,
   createAnalytics,
   DATABUDDY_SCRIPT_URL,
+  DATABUDDY_ERRORS_URL,
   DATABUDDY_TAG_MARK,
+  errorSpan,
   initAnalytics,
   isEventName,
   mayLoad,
@@ -110,6 +112,7 @@ function setup(
   } = {},
 ) {
   const document = overrides.document ?? new FakeDocument();
+  const posts: { readonly url: string; readonly body: string }[] = [];
   const win = new FakeWindow(overrides.origin ?? CANONICAL_ORIGIN);
   if (overrides.windowDoNotTrack !== undefined) win.doNotTrack = overrides.windowDoNotTrack;
   const env: AnalyticsEnv<FakeScript> = {
@@ -118,16 +121,18 @@ function setup(
     window: win,
     navigator: overrides.navigator ?? {},
     document,
+    postErrors: (url, body) => posts.push({ url, body }),
+    newId: () => "event-id",
   };
-  return { env, document, win };
+  return { env, document, win, posts };
 }
 
 /** An enabled instance whose tracker has already loaded. */
 function loaded(options: { throws?: boolean } = {}) {
-  const { env, win, document } = setup();
+  const { env, win, document, posts } = setup();
   const { tracker, calls } = fakeTracker(options);
   win.databuddy = tracker;
-  return { analytics: createAnalytics(env), calls, win, document };
+  return { analytics: createAnalytics(env), calls, win, document, posts };
 }
 
 /** Every string inside what was sent, joined, for leak checks. */
@@ -719,5 +724,84 @@ describe("EditorErrorBoundary", () => {
       },
     });
     expect(() => boundary.componentDidCatch(hostile)).not.toThrow();
+  });
+});
+
+describe("Databuddy error tracking rows", () => {
+  it("posts one row per reported error, built only from the codes", () => {
+    const { analytics, posts } = loaded();
+    const error = new TypeError("Cannot read holiday-photo.png at blob:https://edit.here/abc");
+    error.stack = "TypeError: at /Users/me/secret/holiday-photo.png:1:2";
+    analytics.reportError(error, { source: "export" });
+    expect(posts).toHaveLength(1);
+    const post = posts[0]!;
+    expect(post.url).toBe(`${DATABUDDY_ERRORS_URL}?client_id=client-123`);
+    expect(JSON.parse(post.body)).toEqual([
+      {
+        eventId: "event-id",
+        timestamp: expect.any(Number),
+        path: "/",
+        message: "runtime_error (export)",
+        errorType: "TypeError",
+      },
+    ]);
+    expect(post.body).not.toMatch(/holiday|secret|blob|Users/);
+  });
+
+  it("joins the row to the visitor's session when databuddy.js knows it", () => {
+    const span = errorSpan(
+      { source: "window", name: "Error", code: "unknown" },
+      { anonId: "anon-1", sessionId: "sess-1" },
+      "id-1",
+      5,
+    );
+    expect(span).toEqual({
+      eventId: "id-1",
+      timestamp: 5,
+      path: "/",
+      message: "unknown (window)",
+      errorType: "Error",
+      anonymousId: "anon-1",
+      sessionId: "sess-1",
+    });
+  });
+
+  it("waits for databuddy.js before posting, and posts nothing when analytics is off", () => {
+    const { env, document, posts, win } = setup();
+    const analytics = createAnalytics(env);
+    analytics.reportError(new Error("boom"));
+    expect(posts).toHaveLength(0);
+    win.databuddy = fakeTracker().tracker;
+    document.appended[0]!.fireLoad();
+    expect(posts).toHaveLength(1);
+
+    const off = setup({ origin: "https://edit-here.vercel.app" });
+    createAnalytics(off.env).reportError(new Error("boom"));
+    expect(off.posts).toHaveLength(0);
+  });
+});
+
+describe("usage events", () => {
+  it("sends tool_used once per tool and kind, and drops unknown tools", () => {
+    const { analytics, calls } = loaded();
+    analytics.trackEvent("tool_used", { kind: "image", tool: "redact" });
+    analytics.trackEvent("tool_used", { kind: "image", tool: "redact" });
+    analytics.trackEvent("tool_used", { kind: "video", tool: "trim" });
+    Reflect.apply(analytics.trackEvent, analytics, ["tool_used", { kind: "image", tool: "my-file.png" }]);
+    expect(calls).toEqual([
+      { name: "tool_used", properties: { kind: "image", tool: "redact" } },
+      { name: "tool_used", properties: { kind: "video", tool: "trim" } },
+    ]);
+  });
+
+  it("sends app_started and pwa_installed with closed values only", () => {
+    const { analytics, calls } = loaded();
+    analytics.trackEvent("app_started", { display: "standalone", network: "offline" });
+    analytics.trackEvent("pwa_installed", {});
+    Reflect.apply(analytics.trackEvent, analytics, ["app_started", { display: "tv", network: "online" }]);
+    expect(calls).toEqual([
+      { name: "app_started", properties: { display: "standalone", network: "offline" } },
+      { name: "pwa_installed", properties: {} },
+    ]);
   });
 });

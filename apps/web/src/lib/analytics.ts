@@ -25,8 +25,10 @@
  *     for `error` and `unhandledrejection` itself and sends a `js_error` custom event (it lands
  *     in Databuddy's custom events, not its error spans). That event carries exactly three values,
  *     each from a closed list: where it was caught (`source`), the error's name if it is a
- *     standard one (`name`), and a fixed `code` it is classified into. No text from the
- *     message or the stack is ever sent.
+ *     standard one (`name`), and a fixed `code` it is classified into. The same error is also
+ *     posted to Databuddy's error intake (its Errors page) as a row whose message is that code and
+ *     source, whose type is the safe name and whose page is "/", with no stack, file, line or
+ *     column. No text from the message or the stack is ever sent.
  *
  * Module-level code only reads `import.meta.env`, so tests import this without a DOM.
  */
@@ -60,6 +62,21 @@ const MEDIA_KINDS = ["image", "video"] as const;
 const OPEN_SOURCES = ["file", "sample", "recent", "restore"] as const;
 const PLACEMENTS = ["home", "image", "video"] as const;
 const ERROR_SOURCES = ["app", "editor", "export", "window", "promise"] as const;
+const TOOLS = [
+  "pen",
+  "highlighter",
+  "arrow",
+  "rectangle",
+  "text",
+  "crop",
+  "redact",
+  "frame",
+  "trim",
+  "speed",
+  "audio",
+] as const;
+const DISPLAY_MODES = ["browser", "standalone"] as const;
+const NETWORK_STATES = ["online", "offline"] as const;
 
 /** Error names that are sent as is. Any other name (a custom class, a library's) becomes "Error". */
 export const SAFE_ERROR_NAMES = [
@@ -139,6 +156,9 @@ const EVENT_SCHEMA = {
   export_completed: { kind: oneOf(MEDIA_KINDS), format: exportFormat },
   export_failed: { kind: oneOf(MEDIA_KINDS), format: exportFormat },
   image_copied: { kind: oneOf(MEDIA_KINDS) },
+  tool_used: { kind: oneOf(MEDIA_KINDS), tool: oneOf(TOOLS) },
+  app_started: { display: oneOf(DISPLAY_MODES), network: oneOf(NETWORK_STATES) },
+  pwa_installed: {},
   star_prompt_shown: { placement: oneOf(PLACEMENTS) },
   star_prompt_clicked: { placement: oneOf(PLACEMENTS) },
   star_prompt_dismissed: { placement: oneOf(PLACEMENTS) },
@@ -164,6 +184,36 @@ export type OpenSource = (typeof OPEN_SOURCES)[number];
 export type StarPromptPlacement = (typeof PLACEMENTS)[number];
 export type ErrorSource = (typeof ERROR_SOURCES)[number];
 export type ErrorContext = { readonly source: ErrorSource };
+export type ToolName = (typeof TOOLS)[number];
+
+/** Events sent at most once per page load and set of properties (a tool picked again is not new). */
+const ONCE_PER_PAGE: ReadonlySet<AnalyticsEventName> = new Set(["tool_used", "app_started"]);
+
+/** Databuddy's error intake: rows here are what its Errors page and error_spans show. */
+export const DATABUDDY_ERRORS_URL = "https://basket.databuddy.cc/errors";
+
+/**
+ * The one error row sent to Databuddy's error tracking for a reported error. Its message is the
+ * fixed code and its type the safe name; the page is always "/", and there is no stack, file
+ * name, line or column, so nothing about the visitor or their file can reach it.
+ */
+export function errorSpan(
+  properties: AnalyticsEvents["js_error"],
+  ids: { readonly anonId: string | null; readonly sessionId: string | null },
+  eventId: string,
+  timestamp: number,
+): Record<string, string | number> {
+  const span: Record<string, string | number> = {
+    eventId,
+    timestamp,
+    path: "/",
+    message: `${properties.code} (${properties.source})`,
+    errorType: properties.name,
+  };
+  if (ids.anonId !== null) span.anonymousId = ids.anonId;
+  if (ids.sessionId !== null) span.sessionId = ids.sessionId;
+  return span;
+}
 
 /** Whether `name` is one of the schema's own events (inherited keys like "toString" are not). */
 export function isEventName(name: unknown): name is AnalyticsEventName {
@@ -354,6 +404,10 @@ export type AnalyticsEnv<E extends ScriptLike> = {
   readonly window: AnalyticsWindow;
   readonly navigator: AnalyticsNavigator;
   readonly document: AnalyticsDocument<E>;
+  /** Sends one request body to Databuddy's error intake; the default posts it with fetch. */
+  readonly postErrors?: (url: string, body: string) => void;
+  /** A new event id; the default is crypto.randomUUID. */
+  readonly newId?: () => string;
 };
 
 export type Analytics = {
@@ -386,6 +440,36 @@ function databuddyTrack(win: AnalyticsWindow) {
     ? (name: string, properties: Record<string, string>): unknown =>
         Reflect.apply(method, tracker, [name, properties])
     : undefined;
+}
+
+/** `window.databuddy.getTrackingIds()`, so an error row joins the visitor's session. */
+function trackingIds(win: AnalyticsWindow): {
+  readonly anonId: string | null;
+  readonly sessionId: string | null;
+} {
+  const tracker = win.databuddy;
+  const none = { anonId: null, sessionId: null };
+  if (typeof tracker !== "object" || tracker === null) return none;
+  const method: unknown = Reflect.get(tracker, "getTrackingIds");
+  if (typeof method !== "function") return none;
+  const ids: unknown = Reflect.apply(method, tracker, []);
+  if (typeof ids !== "object" || ids === null) return none;
+  const anonId: unknown = Reflect.get(ids, "anonId");
+  const sessionId: unknown = Reflect.get(ids, "sessionId");
+  return {
+    anonId: typeof anonId === "string" ? anonId : null,
+    sessionId: typeof sessionId === "string" ? sessionId : null,
+  };
+}
+
+function defaultPostErrors(url: string, body: string): void {
+  void fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=UTF-8" },
+    body,
+    keepalive: true,
+    credentials: "omit",
+  }).catch(() => undefined);
 }
 
 /** databuddy.js marks its own failed requests so they are not reported as app errors. */
@@ -448,11 +532,13 @@ export function createAnalytics<E extends ScriptLike>(env: AnalyticsEnv<E>): Ana
       existing.addEventListener("load", flush);
     }
 
-    /** Sends now if databuddy.js is ready, else once it loads. */
-    const send = (name: AnalyticsEventName, properties: unknown) => {
-      const picked = pickEventProperties(name, properties);
-      if (picked === null) return;
-      const run = () => databuddyTrack(win)?.(name, picked);
+    const sentOnce = new Set<string>();
+    const postErrors = env.postErrors ?? defaultPostErrors;
+    const newId = env.newId ?? (() => crypto.randomUUID());
+    const errorsUrl = `${DATABUDDY_ERRORS_URL}?client_id=${encodeURIComponent(env.clientId)}`;
+
+    /** Runs `run` now if databuddy.js is ready, else once it loads. */
+    const whenReady = (run: () => void) => {
       if (databuddyTrack(win) !== undefined) {
         flush();
         run();
@@ -460,6 +546,28 @@ export function createAnalytics<E extends ScriptLike>(env: AnalyticsEnv<E>): Ana
       }
       if (queue.length >= MAX_QUEUED) queue.shift();
       queue.push(run);
+    };
+
+    const send = (name: AnalyticsEventName, properties: unknown) => {
+      const picked = pickEventProperties(name, properties);
+      if (picked === null) return;
+      if (ONCE_PER_PAGE.has(name)) {
+        const key = JSON.stringify([name, picked]);
+        if (sentOnce.has(key)) return;
+        sentOnce.add(key);
+      }
+      whenReady(() => databuddyTrack(win)?.(name, picked));
+    };
+
+    /** Also files the error in Databuddy's error tracking, as a row built only from the codes. */
+    const sendErrorSpan = (properties: AnalyticsEvents["js_error"]) => {
+      const checked = pickEventProperties("js_error", properties);
+      if (checked === null) return;
+      const at = Date.now();
+      whenReady(() => {
+        const span = errorSpan(properties, trackingIds(win), newId(), at);
+        postErrors(errorsUrl, JSON.stringify([span]));
+      });
     };
 
     const reported = new Set<string>();
@@ -471,6 +579,7 @@ export function createAnalytics<E extends ScriptLike>(env: AnalyticsEnv<E>): Ana
         if (reported.has(key)) return;
         reported.add(key);
         send("js_error", properties);
+        sendErrorSpan(properties);
       } catch {
         // A hostile or broken error object never escapes.
       }
@@ -557,6 +666,14 @@ export function initAnalytics<E extends ScriptLike>(env?: AnalyticsEnv<E>): Anal
   started = true;
   instance = createAnalytics(env);
   return instance;
+}
+
+/** Databuddy's client id for flag evaluation; "" off production. */
+export const DATABUDDY_CLIENT_ID = CLIENT_ID;
+
+/** Whether this page loaded databuddy.js; flags are only evaluated then. */
+export function analyticsEnabled(): boolean {
+  return instance.enabled;
 }
 
 /** Test hook: forgets the started instance. */
