@@ -1101,6 +1101,7 @@ function ImageWorkspace({
             image={image}
             state={draft ?? present}
             canvasDraft={canvasDraft}
+            savedRedactions={present.redactions}
             layers={previewLayers}
             label={`Edited ${file.name}`}
             overlay={overlay}

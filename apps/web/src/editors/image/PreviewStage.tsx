@@ -6,6 +6,7 @@ import {
   imageLayoutsEqual,
   isFitViewport,
   resolveExportBackground,
+  sameRect,
   stageMaxZoom,
   type AnnotationListChange,
   type ExportBackground,
@@ -14,6 +15,7 @@ import {
   type ImageLayout,
   type PixelOffset,
   type PixelRect,
+  type RedactionBox,
 } from "@edit-here/core";
 import { MinusSignIcon, PlusSignIcon } from "@hugeicons/core-free-icons";
 import { Icon } from "../../components/Icon";
@@ -36,6 +38,8 @@ import {
   createRedactedCanvasCache,
   drawAnnotations,
   layoutForState,
+  NO_DRAFTS,
+  redactionFootprints,
   type AnyCanvas,
   type LayerSources,
 } from "./render";
@@ -56,6 +60,11 @@ type PreviewStageProps = {
    * dragged past the edge grows the canvas without the whole picture shrinking under the pointer.
    */
   canvasDraft: CanvasDraftStore;
+  /**
+   * The saved document's redaction boxes. A box that is new or placed elsewhere in `state` is
+   * being drawn, moved or resized; a strength or style draft keeps its place.
+   */
+  savedRedactions: readonly RedactionBox[];
   /** Preview-sized pictures for the image layers. */
   layers: LayerSources;
   label: string;
@@ -153,6 +162,7 @@ export function PreviewStage({
   image,
   state: committed,
   canvasDraft,
+  savedRedactions,
   layers,
   label,
   overlay,
@@ -258,6 +268,19 @@ export function PreviewStage({
       : null;
   const paintLayout = sameLayout ? committedNoFrameLayout : liveNoFrameLayout;
   const noFrameLayout = baseShift === null ? liveNoFrameLayout : committedNoFrameLayout;
+  // A box being drawn, moved or resized skips the blur's costly soften pass until the pointer
+  // lifts, when the committed state redacts it exactly. Exports never see a draft.
+  const drafts = useMemo((): ReadonlySet<string> => {
+    if (redactions === savedRedactions) return NO_DRAFTS;
+    const before = new Map(savedRedactions.map((r) => [r.id, r.rect]));
+    const moved = redactions
+      .filter((r) => {
+        const saved = before.get(r.id);
+        return saved === undefined || !sameRect(saved, r.rect);
+      })
+      .map((r) => r.id);
+    return moved.length === 0 ? NO_DRAFTS : new Set(moved);
+  }, [redactions, savedRedactions]);
   // Repaints only what a redaction change reaches; a new canvas object means new pixels.
   const [redactionCache] = useState(createRedactedCanvasCache);
   const redactedCanvas = useMemo(
@@ -268,8 +291,9 @@ export function PreviewStage({
         geometry: { crop, rotation, flipX },
         redactions,
         layout: noFrameLayout,
+        drafts,
       }),
-    [redactionCache, image, crop, rotation, flipX, redactions, noFrameLayout],
+    [redactionCache, image, crop, rotation, flipX, redactions, noFrameLayout, drafts],
   );
   // React may run a render and throw it away; the cache must not draw over what is on screen,
   // which this memo hands back as is whenever its inputs come back.
@@ -278,6 +302,18 @@ export function PreviewStage({
   }, [redactionCache, redactedCanvas]);
 
   const geometry = useMemo(() => ({ crop, rotation, flipX }), [crop, rotation, flipX]);
+  // What the stage painter compares to copy only the pixels a box change reaches.
+  const redactionBoxes = useMemo(
+    () =>
+      redactionFootprints({
+        redactions,
+        geometry,
+        layout: noFrameLayout,
+        sourceSize: image.size,
+        drafts,
+      }),
+    [redactions, geometry, noFrameLayout, image.size, drafts],
+  );
   // Text drawn before the text font loaded used a fallback, so a load redraws the cached
   // drawings below, each tagged with the generation it was drawn against, and the painter
   // repaints in full for a paint of a new generation.
@@ -362,6 +398,7 @@ export function PreviewStage({
       sourceSize: image.size,
       layers,
       redactions,
+      redactionBoxes,
       fonts: textFonts,
     };
     switch (change.kind) {

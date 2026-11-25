@@ -16,6 +16,7 @@
 import {
   annotationChangeRegion,
   isImageLayer,
+  planRedactionRepaint,
   unionPixelRects,
   type ImageAnnotation,
   type ImageDocumentState,
@@ -25,6 +26,7 @@ import {
   type PixelRect,
   type PixelRepaint,
   type RedactionBox,
+  type RedactionFootprint,
 } from "@edit-here/core";
 import {
   annotationPaintRect,
@@ -55,6 +57,8 @@ export type StagePaint = {
   readonly sourceSize: ImageSize;
   readonly layers: LayerSources;
   readonly redactions: readonly RedactionBox[];
+  /** `redactionFootprints` of `redactions` as `under` was redacted with them. */
+  readonly redactionBoxes: readonly RedactionFootprint[];
   /**
    * `textFontGeneration()` when `under` was drawn. Text drawn before the text font loaded used
    * a fallback, so a paint of another generation shares no pixels with this one.
@@ -63,17 +67,69 @@ export type StagePaint = {
 };
 
 const FULL: PixelRepaint = { kind: "full" };
+const NONE: PixelRepaint = { kind: "none" };
 
-/** Whether two paints draw their annotations onto the same base, so only annotations differ. */
-function sameScene(a: StagePaint, b: StagePaint): boolean {
+/** Whether two paints lay out the same image and drawings, so at most their redactions differ. */
+function sameGeometry(a: StagePaint, b: StagePaint): boolean {
   return (
     a.layout === b.layout &&
     a.geometry === b.geometry &&
     a.sourceSize === b.sourceSize &&
     a.layers === b.layers &&
-    a.redactions === b.redactions &&
     a.fonts === b.fonts
   );
+}
+
+/**
+ * Whether two paints draw their annotations onto the same base, so only annotations differ. The
+ * same boxes can be drawn at draft and then exact quality, so their footprints are compared too.
+ */
+function sameScene(a: StagePaint, b: StagePaint): boolean {
+  return (
+    sameGeometry(a, b) && a.redactions === b.redactions && a.redactionBoxes === b.redactionBoxes
+  );
+}
+
+function atOrigin(paint: StagePaint): boolean {
+  return paint.underAt.x === 0 && paint.underAt.y === 0;
+}
+
+/**
+ * The pixels that differ when only the redaction boxes changed: the ones the redaction repaint
+ * plan restores and redoes. Drawings composite pixel by pixel over the redacted image, so they
+ * change nothing outside it, except a picture, which is redacted again against every box.
+ */
+function redactionChange(previous: StagePaint, next: StagePaint): PixelRepaint {
+  if (
+    !sameGeometry(previous, next) ||
+    previous.shows !== next.shows ||
+    !atOrigin(previous) ||
+    !atOrigin(next) ||
+    next.shows.some(isImageLayer)
+  ) {
+    return FULL;
+  }
+  const plan = planRedactionRepaint({
+    previous: previous.redactionBoxes,
+    next: next.redactionBoxes,
+  });
+  switch (plan.kind) {
+    case "none":
+      return NONE;
+    case "full":
+      return FULL;
+    case "partial": {
+      const rect = plan.region.reduce<PixelRect | null>(
+        (union, r) => unionPixelRects(union, r),
+        null,
+      );
+      return rect === null ? NONE : { kind: "region", rect };
+    }
+    default: {
+      const _exhaustive: never = plan;
+      return _exhaustive;
+    }
+  }
 }
 
 type Footprint = {
@@ -129,10 +185,11 @@ function contains(outer: PixelRect, inner: PixelRect): boolean {
 /**
  * The pixels that differ between what `previous` and `next` render: the old and new footprint
  * of the one annotation that changed, and, with redactions present, every picture above it,
- * since a picture re-redacts what lies under it (see `annotationChangeRegion`).
+ * since a picture re-redacts what lies under it (see `annotationChangeRegion`). When the
+ * redaction boxes changed instead, the pixels their repaint redoes (see `redactionChange`).
  */
 function changedPixels(previous: StagePaint, next: StagePaint): PixelRepaint {
-  if (!sameScene(previous, next)) return FULL;
+  if (!sameScene(previous, next)) return redactionChange(previous, next);
   return annotationChangeRegion({
     before: previous.shows,
     after: next.shows,
