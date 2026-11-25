@@ -35,6 +35,7 @@ import { randomId } from "../../lib/new-id";
 import { isTouchPrimary } from "../../lib/platform";
 import type { CanvasDraftStore } from "./canvas-draft";
 import { measureAnnotationText } from "./render";
+import { afterTextFont } from "./text-fonts";
 
 type Gesture =
   | {
@@ -238,12 +239,14 @@ export function AnnotationOverlay({
   };
 
   // --- text -----------------------------------------------------------------------------------
-  const openText = (edit: TextEdit) => {
-    setTextEdit(edit);
-    if (edit.existing !== null) setDraft(removeImageAnnotation(base, edit.existing.id));
-    // Focus after the textarea mounts.
-    requestAnimationFrame(() => inputRef.current?.focus());
-  };
+  // Text is measured in the canvas font when it commits, so editing waits until that font loads.
+  const openText = (edit: TextEdit) =>
+    afterTextFont(() => {
+      setTextEdit(edit);
+      if (edit.existing !== null) setDraft(removeImageAnnotation(base, edit.existing.id));
+      // Focus after the textarea mounts.
+      requestAnimationFrame(() => inputRef.current?.focus());
+    });
 
   const finishText = (commit: boolean) => {
     const edit = textEdit;

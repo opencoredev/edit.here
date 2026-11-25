@@ -56,7 +56,7 @@ describe("exportImage", () => {
     const args = {
       source: new FakeBitmap(),
       sourceSize: { width: 10, height: 10 },
-      state: {},
+      state: { annotations: [] },
       layers: new Map(),
       format: "image/png",
     };

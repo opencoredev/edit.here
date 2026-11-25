@@ -29,6 +29,26 @@ export function textFontGeneration(): number {
   return generation;
 }
 
+/** A size and weight of the canvas text font, for `document.fonts` checks and loads. */
+const TEXT_FONT_PROBE = `600 16px "${TEXT_FONT_FACES[0].family}"`;
+
+/**
+ * Runs `run` once the canvas text font has loaded, right away when it already has. A failed
+ * load still runs it, with the fallback font, as text drew before.
+ */
+export function afterTextFont(run: () => void): void {
+  if (document.fonts.check(TEXT_FONT_PROBE)) {
+    run();
+    return;
+  }
+  void document.fonts.load(TEXT_FONT_PROBE).then(run, run);
+}
+
+/** Resolves once the canvas text font has loaded or failed to. */
+export function textFontReady(): Promise<void> {
+  return new Promise((resolve) => afterTextFont(resolve));
+}
+
 export function subscribeTextFonts(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
