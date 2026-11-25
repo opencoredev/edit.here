@@ -10,7 +10,6 @@ import {
   detectMediaKindSync,
   duplicateImageAnnotation,
   enterFrameTool,
-  exportFileName,
   exportFormatInfo,
   IMAGE_EXPORT_FORMATS,
   flipGeometryX,
@@ -65,12 +64,12 @@ import {
 import {
   encodableImageFormat,
   encodableImageFormats,
-  exportFormatOfBlob,
+  imageExportOutput,
 } from "../../lib/image-encoders";
 import { randomId } from "../../lib/new-id";
 import { detectPlatform, isEditableTarget } from "../../lib/platform";
 import { usePersist } from "../../lib/use-persist";
-import type { EditorCommonProps } from "../types";
+import type { EditorCommonProps, ExportedFile } from "../types";
 import { aspectFits, turnAspect, type AspectPreset } from "./aspect";
 import { CropStage } from "./CropStage";
 import { EditorFrame } from "../../components/EditorFrame";
@@ -585,7 +584,7 @@ function ImageWorkspace({
   });
 
   const exportFile = useCallback(
-    async (requested?: string) => {
+    async (requested?: string): Promise<ExportedFile> => {
       const state = presentRef.current;
       // A format picked from the menu exports now, before the state's own format catches up.
       const format = encodableImageFormat(
@@ -599,7 +598,9 @@ function ImageWorkspace({
         format,
       });
       // Named for the bytes it holds, in case an encoder still handed back another format.
-      downloadBlob(blob, exportFileName(file.name, exportFormatOfBlob(blob) ?? format));
+      const output = imageExportOutput({ sourceName: file.name, blob, requested: format });
+      downloadBlob(blob, output.fileName);
+      return { ...output, note: null };
     },
     [file.name, image, fullLayers],
   );

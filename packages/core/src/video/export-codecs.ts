@@ -37,18 +37,27 @@ const AUDIO_TARGET: Readonly<Record<VideoExportFormat, ExportAudioCodec>> = {
 };
 
 const AUDIO_UNSUPPORTED: Readonly<Record<VideoExportFormat, string>> = {
-  mp4: "This browser can't encode AAC audio for MP4. Export as WebM, or mute the audio (M).",
-  webm: "This browser can't encode Opus audio for WebM. Export as MP4, or mute the audio (M).",
+  mp4: "This browser can't encode AAC audio for MP4. Export as WebM, or mute the audio",
+  webm: "This browser can't encode Opus audio for WebM. Export as MP4, or mute the audio",
 };
+
+const MP4_AUDIO_FALLBACK_NOTICE =
+  "This browser can't encode AAC audio for MP4, so it was saved as WebM instead.";
 
 const VIDEO_UNSUPPORTED: Readonly<Record<VideoExportFormat, string>> = {
   mp4: "This browser can't encode H.264 video. Choose WebM and export again.",
   webm: "This browser can't encode WebM video. Choose MP4 and export again.",
 };
 
-/** The error shown when the browser can't encode the audio codec this container needs. */
-export function audioEncodeUnsupportedMessage(format: VideoExportFormat): string {
-  return AUDIO_UNSUPPORTED[format];
+/**
+ * The error shown when the browser can't encode the audio codec this container needs. With
+ * `keyHints` it names the mute shortcut; touch and phone layouts have no keyboard to press it.
+ */
+export function audioEncodeUnsupportedMessage(args: {
+  readonly format: VideoExportFormat;
+  readonly keyHints: boolean;
+}): string {
+  return `${AUDIO_UNSUPPORTED[args.format]}${args.keyHints ? " (M)" : ""}.`;
 }
 
 /** Codecs to ask the browser about before calling `chooseVideoEncoder`. */
@@ -132,6 +141,8 @@ export function chooseAudioExport(
     readonly format: VideoExportFormat;
     readonly source: SourceAudio;
     readonly encodable: ReadonlySet<ExportAudioCodec>;
+    /** Name the mute shortcut in the refusal message (`audioEncodeUnsupportedMessage`). */
+    readonly keyHints: boolean;
   },
 ): AudioExportChoice {
   const { format, source } = args;
@@ -149,7 +160,39 @@ export function chooseAudioExport(
   const target = AUDIO_TARGET[format];
   return args.encodable.has(target)
     ? { kind: "encode", codec: target }
-    : { kind: "unsupported", message: AUDIO_UNSUPPORTED[format] };
+    : {
+        kind: "unsupported",
+        message: audioEncodeUnsupportedMessage({ format, keyHints: args.keyHints }),
+      };
+}
+
+/** The container an export writes, and why when it isn't the one the user selected. */
+export type VideoExportFormatChoice =
+  | { readonly kind: "selected"; readonly format: VideoExportFormat }
+  | { readonly kind: "fallback"; readonly format: "webm"; readonly notice: string };
+
+/**
+ * The container an export writes: the selected one, except MP4 whose audio needs an AAC encoder
+ * this browser lacks (Chromium on Linux, Firefox). Then WebM, when its audio and video both work
+ * here, so Export succeeds instead of failing after the click. `canWriteWebmVideo` is a slow
+ * browser check, so it is asked only for that fallback.
+ */
+export async function resolveVideoExportFormat(
+  args: AudioRanges & {
+    readonly selected: VideoExportFormat;
+    readonly source: SourceAudio;
+    readonly encodable: ReadonlySet<ExportAudioCodec>;
+    readonly canWriteWebmVideo: () => Promise<boolean>;
+  },
+): Promise<VideoExportFormatChoice> {
+  const { selected, canWriteWebmVideo, ...audio } = args;
+  const asSelected: VideoExportFormatChoice = { kind: "selected", format: selected };
+  if (selected !== "mp4") return asSelected;
+  const unsupported = (format: VideoExportFormat): boolean =>
+    chooseAudioExport({ ...audio, format, keyHints: false }).kind === "unsupported";
+  if (!unsupported("mp4") || unsupported("webm")) return asSelected;
+  if (!(await canWriteWebmVideo())) return asSelected;
+  return { kind: "fallback", format: "webm", notice: MP4_AUDIO_FALLBACK_NOTICE };
 }
 
 /**

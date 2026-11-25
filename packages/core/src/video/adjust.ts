@@ -9,6 +9,7 @@ import type {
   ImageRotation,
   VideoCropAspect,
   VideoDocumentState,
+  VideoExportFormat,
   VideoSegment,
   VideoTool,
 } from "../types";
@@ -407,6 +408,36 @@ export function commitVideoState(history: VideoHistory, next: VideoDocumentState
   if (next === history.present) return history;
   if (!documentChanged(history.present, next)) return { ...history, present: next };
   return pushHistory(history, next);
+}
+
+/**
+ * Makes `format` the export format of every step without an undo step of its own, for a format
+ * the export switched to by itself. Undo and redo keep every real edit; a step that only changed
+ * the format, and now matches its neighbor, is dropped so undo never lands on a no-op.
+ */
+export function setVideoExportFormatEverywhere(
+  history: VideoHistory,
+  format: VideoExportFormat,
+): VideoHistory {
+  const withFormat = (state: VideoDocumentState): VideoDocumentState =>
+    state.exportFormat === format ? state : { ...state, exportFormat: format };
+  const present = withFormat(history.present);
+  /** Steps walking away from the present, without the ones that equal the step before them. */
+  const distinct = (steps: readonly VideoDocumentState[]): VideoDocumentState[] => {
+    const kept: VideoDocumentState[] = [];
+    let last = present;
+    for (const step of steps.map(withFormat)) {
+      if (!documentChanged(last, step)) continue;
+      kept.push(step);
+      last = step;
+    }
+    return kept;
+  };
+  return {
+    past: distinct(history.past.toReversed()).toReversed(),
+    present,
+    future: distinct(history.future),
+  };
 }
 
 /** Undo and redo keep the open tray: switching tools is not an edit. */

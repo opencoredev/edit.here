@@ -244,7 +244,14 @@ describe("planVideoExport with per-clip settings", () => {
 });
 
 describe("chooseAudioExport with per-range settings", () => {
-  const base = { format: "mp4", source: aac, encodable: both, fadeIn: 0, fadeOut: 0 } as const;
+  const base = {
+    format: "mp4",
+    source: aac,
+    encodable: both,
+    fadeIn: 0,
+    fadeOut: 0,
+    keyHints: true,
+  } as const;
   const plain = { speed: 1, volume: 1, muted: false };
 
   it("copies one untouched range", () => {

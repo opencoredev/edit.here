@@ -45,6 +45,7 @@ import {
   recordVisit,
   STAR_PROMPT_KEY,
 } from "./lib/star-prompt";
+import { exportDoneMessage } from "./lib/export-message";
 import { PendingOpens, readyOpen, resolveExportFormat, settleCopy } from "./lib/telemetry";
 import { sourceThumbnail } from "./lib/thumbnail";
 import {
@@ -491,8 +492,9 @@ export function App() {
         !snapshot.matches("editing")
       )
         return;
-      const { name, kind } = session;
-      // The format the export really uses ("png", "mp4"), never anything from the file.
+      const { kind } = session;
+      // The format asked for ("png", "mp4"), never anything from the file; a success reports the
+      // format the editor says it wrote instead.
       const reportedFormat = resolveExportFormat(format, actions.exportFormats);
       const formatLabel =
         format === undefined
@@ -501,10 +503,11 @@ export function App() {
       const label = formatLabel === undefined ? actions.exportLabel : `Export ${formatLabel}`;
       send(label === undefined ? { type: "export.start" } : { type: "export.start", label });
       try {
-        await exportFile(format);
-        send({ type: "export.done", message: `Exported ${name}` });
-        if (reportedFormat !== undefined) {
-          trackEvent("export_completed", { kind, format: reportedFormat });
+        const exported = await exportFile(format);
+        send({ type: "export.done", message: exportDoneMessage(exported) });
+        const writtenFormat = resolveExportFormat(exported.format, undefined);
+        if (writtenFormat !== undefined) {
+          trackEvent("export_completed", { kind, format: writtenFormat });
         }
       } catch (cause) {
         send({ type: "export.failed", message: errorMessage(cause, "Export failed.") });
@@ -516,19 +519,26 @@ export function App() {
     [actions, send, session, snapshot],
   );
 
-  const runCopy = useCallback(() => {
-    const copy = actions.copy;
-    if (copy === undefined || actions.busy === true) return;
-    const kind = session?.kind;
-    settleCopy(copy(), {
-      onCopied: () => {
-        setCopied(true);
-        if (kind !== undefined) trackEvent("image_copied", { kind });
-      },
-      // The editor reports its own copy errors.
-      onFailed: () => setCopied(false),
-    });
-  }, [actions, session?.kind]);
+  /** `announce` toasts the copy, for a menu item that closes before it can say "Copied". */
+  const runCopy = useCallback(
+    (announce = false) => {
+      const copy = actions.copy;
+      if (copy === undefined || actions.busy === true) return;
+      const kind = session?.kind;
+      settleCopy(copy(), {
+        onCopied: () => {
+          setCopied(true);
+          if (announce) {
+            send({ type: "toast.show", message: "Copied to the clipboard.", tone: "success" });
+          }
+          if (kind !== undefined) trackEvent("image_copied", { kind });
+        },
+        // The editor reports its own copy errors.
+        onFailed: () => setCopied(false),
+      });
+    },
+    [actions, send, session?.kind],
+  );
 
   useEffect(() => {
     if (!copied) return;
@@ -698,7 +708,8 @@ export function App() {
               onOpenFile={chooseFile}
               onShowKeybinds={() => send({ type: "keybinds.open" })}
               onCloseFile={closeFile}
-              onCopy={runCopy}
+              onCopy={() => runCopy()}
+              onCopyFromMenu={() => runCopy(true)}
               onExport={(format) => void runExport(format)}
               onOpenGitHub={dismissStar}
             />
