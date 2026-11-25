@@ -66,6 +66,35 @@ function runtimeEnv(): Readonly<Record<string, string | undefined>> {
 
 type WaitUntil = { waitUntil?: (promise: Promise<unknown>) => void };
 
+/** Reports one isolate may send at once before it has to wait for the bucket to refill. */
+export const REPORT_BURST = 60;
+/** Reports added back to the bucket each second, up to REPORT_BURST. */
+export const REPORT_REFILL_PER_SECOND = 1;
+
+/**
+ * A token bucket that caps how many reports one isolate sends, so a flood of requests claiming
+ * to be agents cannot flood Databuddy. Returns whether a report may go out now; time comes from
+ * `now` in milliseconds.
+ */
+export function createReportLimiter(
+  burst: number,
+  refillPerSecond: number,
+  now: () => number,
+): () => boolean {
+  let tokens = burst;
+  let last = now();
+  return () => {
+    const current = now();
+    tokens = Math.min(burst, tokens + (Math.max(0, current - last) / 1000) * refillPerSecond);
+    last = current;
+    if (tokens < 1) return false;
+    tokens -= 1;
+    return true;
+  };
+}
+
+const allowReport = createReportLimiter(REPORT_BURST, REPORT_REFILL_PER_SECOND, () => Date.now());
+
 /** What the SDK gets for one request, built only from fixed values; null when nothing is reported. */
 export function agentHit(request: Request): Parameters<typeof trackAgents>[0] | null {
   const url = new URL(request.url);
@@ -91,7 +120,7 @@ export default function middleware(request: Request, context?: WaitUntil): Respo
   try {
     const websiteId = runtimeEnv().VITE_DATABUDDY_CLIENT_ID?.trim() ?? "";
     const hit = websiteId === "" ? null : agentHit(request);
-    if (hit !== null) context?.waitUntil?.(trackAgents(hit, { websiteId }));
+    if (hit !== null && allowReport()) context?.waitUntil?.(trackAgents(hit, { websiteId }));
   } catch {
     // Reporting never changes the response.
   }
