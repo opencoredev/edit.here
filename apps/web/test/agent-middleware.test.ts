@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import middleware, { agentHit } from "../../../middleware";
+import { REPORT_BURST, agentHit, createReportLimiter } from "../../../middleware";
 
 const SECRET = "holiday-photo.png";
 
@@ -7,12 +7,58 @@ function request(path: string, headers: Record<string, string>, host = "edit.her
   return new Request(`https://${host}${path}`, { headers });
 }
 
+async function freshMiddleware() {
+  vi.resetModules();
+  return (await import("../../../middleware")).default;
+}
+
 const agentOf = (userAgent: string) =>
   Reflect.get(agentHit(request("/", { "user-agent": userAgent }))?.headers ?? {}, "user-agent");
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+});
+
+describe("report limiter", () => {
+  it("allows the burst, drops reports once empty and refills over time", () => {
+    let time = 1_000;
+    const allow = createReportLimiter(3, 1, () => time);
+    expect([allow(), allow(), allow(), allow()]).toEqual([true, true, true, false]);
+    time += 500;
+    expect(allow()).toBe(false);
+    time += 500;
+    expect([allow(), allow()]).toEqual([true, false]);
+    time += 60_000;
+    expect([allow(), allow(), allow(), allow()]).toEqual([true, true, true, false]);
+  });
+
+  it("does not gain tokens when the clock goes backwards", () => {
+    let time = 10_000;
+    const allow = createReportLimiter(1, 1, () => time);
+    expect(allow()).toBe(true);
+    time = 0;
+    expect(allow()).toBe(false);
+    time = 999;
+    expect(allow()).toBe(false);
+    time = 10_999;
+    expect(allow()).toBe(false);
+    time = 11_000;
+    expect(allow()).toBe(true);
+  });
+
+  it("refills a whole token after a second split into uneven steps", () => {
+    let time = 0;
+    const allow = createReportLimiter(1, 1, () => time);
+    expect(allow()).toBe(true);
+    for (const step of [300, 600]) {
+      time += step;
+      expect(allow()).toBe(false);
+    }
+    time += 100;
+    expect(allow()).toBe(true);
+  });
 });
 
 describe("agent middleware", () => {
@@ -51,6 +97,7 @@ describe("agent middleware", () => {
   });
 
   it("always continues the request, and sends no raw header text to Databuddy", async () => {
+    const middleware = await freshMiddleware();
     vi.stubEnv("VITE_DATABUDDY_CLIENT_ID", "site-1");
     const bodies: string[] = [];
     vi.stubGlobal(
@@ -73,5 +120,55 @@ describe("agent middleware", () => {
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).not.toContain(SECRET);
     expect(bodies[0]).not.toContain("1.2.3.4");
+  });
+
+  it("stops reporting a flood once the bucket is empty but still passes every request", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const middleware = await freshMiddleware();
+    vi.stubEnv("VITE_DATABUDDY_CLIENT_ID", "site-1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("ok")),
+    );
+    let reports = 0;
+    const context = { waitUntil: () => void reports++ };
+    for (let i = 0; i < REPORT_BURST * 3; i++) {
+      const response = middleware(request("/", { "user-agent": "GPTBot/1.2" }), context);
+      expect(response.headers.get("x-middleware-next")).toBe("1");
+    }
+    expect(reports).toBe(REPORT_BURST);
+    const drained = reports;
+    expect(
+      middleware(request("/", { "user-agent": "GPTBot/1.2" }), context).headers.get(
+        "x-middleware-next",
+      ),
+    ).toBe("1");
+    expect(reports).toBe(drained);
+    vi.advanceTimersByTime(1_000);
+    middleware(request("/", { "user-agent": "GPTBot/1.2" }), context);
+    expect(reports).toBe(drained + 1);
+  });
+
+  it("spends no token when the runtime gives no waitUntil", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const middleware = await freshMiddleware();
+    vi.stubEnv("VITE_DATABUDDY_CLIENT_ID", "site-1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("ok")),
+    );
+    for (let i = 0; i < REPORT_BURST * 2; i++) {
+      expect(
+        middleware(request("/", { "user-agent": "GPTBot/1.2" })).headers.get("x-middleware-next"),
+      ).toBe("1");
+      expect(
+        middleware(request("/", { "user-agent": "GPTBot/1.2" }), {}).headers.get(
+          "x-middleware-next",
+        ),
+      ).toBe("1");
+    }
+    let reports = 0;
+    middleware(request("/", { "user-agent": "GPTBot/1.2" }), { waitUntil: () => void reports++ });
+    expect(reports).toBe(1);
   });
 });
