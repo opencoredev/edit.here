@@ -43,6 +43,34 @@
     />
 
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "@id": "https://edit.here/#app",
+        "name": "edit.here",
+        "url": "https://edit.here/",
+        "description": "Free image and video editor that runs in the browser. Files are opened, edited and exported on your device and never uploaded.",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "Any (web browser)",
+        "browserRequirements": "Requires JavaScript. Video decoding and export use the browser's own codecs.",
+        "isAccessibleForFree": true,
+        "license": "https://opensource.org/licenses/MIT",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "featureList": [
+          "Crop, rotate and flip images",
+          "Draw with a pen, highlighter, arrows, boxes and text",
+          "Redact with blackout, blur or pixelate",
+          "Frame images with padding, rounded corners, a shadow and a background",
+          "Export images as PNG, JPEG or WebP (formats depend on the browser), or copy to the clipboard",
+          "Trim and split videos and delete segments",
+          "Crop, rotate and flip videos",
+          "Change video speed and volume per clip and add fades",
+          "Works offline after the first visit"
+        ],
+        "sameAs": ["https://github.com/opencoredev/edit.here"]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

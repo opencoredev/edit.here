@@ -17,5 +17,9 @@
       "source": "/sw.js",
       "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
     }
+  ],
+  "redirects": [
+    { "source": "/pixelate-image/", "destination": "/pixelate-image", "permanent": true },
+    { "source": "/pixelate-image/index.html", "destination": "/pixelate-image", "permanent": true }
   ]
 }
