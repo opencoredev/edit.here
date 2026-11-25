@@ -83,11 +83,11 @@ export function createReportLimiter(
 ): () => boolean {
   const capacity = burst * 1000;
   let milliTokens = capacity;
-  let last = now();
+  let last = Math.floor(now());
   return () => {
-    const current = now();
+    const current = Math.floor(now());
     if (current > last) {
-      milliTokens = Math.min(capacity, milliTokens + Math.floor(current - last) * refillPerSecond);
+      milliTokens = Math.min(capacity, milliTokens + (current - last) * refillPerSecond);
       last = current;
     }
     if (milliTokens < 1000) return false;
