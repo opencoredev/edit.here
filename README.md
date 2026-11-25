@@ -15,6 +15,10 @@ Use it at [edit.here](https://edit.here/).
 - **Works offline**: after the first visit the whole app is cached, so it opens without a connection.
 - **Picks up where you left off**: recent work is kept in your browser's IndexedDB.
 
+## Guides
+
+- [Pixelate an image](https://edit.here/pixelate-image)
+
 ## Keyboard shortcuts
 
 Press `?` in the app for the full list. The common ones (`Mod` is Cmd on macOS, Ctrl elsewhere):

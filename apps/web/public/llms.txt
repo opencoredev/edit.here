@@ -10,6 +10,10 @@ Recent work is kept in the browser's IndexedDB, so a reload picks up where you l
 
 Privacy: editing happens on the device, files are never uploaded, and no account is needed. The production site uses cookieless analytics (Databuddy) for page views, Web Vitals, feature usage events and fixed error codes. It never sends file names, file contents or typed text, and it does not load when Global Privacy Control or Do Not Track is on.
 
+## Guides
+
+- [Pixelate an image](https://edit.here/pixelate-image): how to pixelate, blur or black out part of an image in edit.here, and which style to use for secrets
+
 ## Links
 
 - [edit.here](https://edit.here/): the editor itself
