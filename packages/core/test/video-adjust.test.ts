@@ -13,6 +13,7 @@ import {
   parseVideoDocumentState,
   planVideoExport,
   rotateVideoCw,
+  setVideoExportFormatEverywhere,
   setVideoFade,
   setVideoInPoint,
   setVideoSpeed,
@@ -22,6 +23,7 @@ import {
   timeScaleChannel,
   toggleDeleteVideoSegment,
   toggleVideoTool,
+  redoHistory,
   undoHistory,
   VIDEO_SPEED_PRESETS,
   type VideoDocumentState,
@@ -338,6 +340,31 @@ describe("video history", () => {
     expect(tool.present.tool).toBe("audio");
     const edited = commitVideoState(tool, setVideoVolume(tool.present, 0.5));
     expect(edited.past).toHaveLength(1);
+  });
+
+  it("switches the export format everywhere without leaving a no-op undo step", () => {
+    const webm = createHistory({ ...fresh(), exportFormat: "webm" as const });
+    const pickedMp4 = commitVideoState(webm, { ...webm.present, exportFormat: "mp4" });
+    expect(pickedMp4.past).toHaveLength(1);
+    const fellBack = setVideoExportFormatEverywhere(pickedMp4, "webm");
+    expect(fellBack.present.exportFormat).toBe("webm");
+    expect(fellBack.past).toHaveLength(0);
+    expect(fellBack.future).toHaveLength(0);
+  });
+
+  it("keeps real edits undoable and redoable when the export format switches", () => {
+    const start = createHistory({ ...fresh(), exportFormat: "webm" as const });
+    const pickedMp4 = commitVideoState(start, { ...start.present, exportFormat: "mp4" });
+    const slowed = commitVideoState(pickedMp4, setVideoSpeed(pickedMp4.present, 0.5));
+    const louder = commitVideoState(slowed, setVideoVolume(slowed.present, 2));
+    const undone = undoHistory(louder);
+    const fellBack = setVideoExportFormatEverywhere(undone, "webm");
+    expect(fellBack.present).toMatchObject({ speed: 0.5, exportFormat: "webm" });
+    expect(fellBack.past).toHaveLength(1);
+    expect(fellBack.past[0]).toMatchObject({ speed: 1, exportFormat: "webm" });
+    const redone = redoHistory(fellBack);
+    expect(redone.present).toMatchObject({ speed: 0.5, volume: 2, exportFormat: "webm" });
+    expect(undoHistory(fellBack).present).toMatchObject({ speed: 1, exportFormat: "webm" });
   });
 
   it("keeps the open tray across undo", () => {

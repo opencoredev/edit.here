@@ -39,6 +39,7 @@ import {
   restoreAllVideoSegments,
   rotateVideoCw,
   setVideoCropAspect,
+  setVideoExportFormatEverywhere,
   setVideoFade,
   setVideoInPoint,
   toggleTargetMuted,
@@ -803,20 +804,10 @@ function VideoWorkspace({
       });
       const fileName = videoExportFileName(meta.name, result.format);
       downloadBlob(result.blob, fileName);
-      // WebM written in place of MP4 becomes the selection, so Export names what it writes. It is
-      // a setting, not an edit: every undo and redo step takes it too, and neither stack changes.
+      // WebM written in place of MP4 becomes the selection, so Export names what it writes. It
+      // is a setting, not an edit: undo and redo keep every real edit around it.
       const written = result.format;
-      if (written !== plan.format) {
-        const withFormat = (s: VideoDocumentState): VideoDocumentState => ({
-          ...s,
-          exportFormat: written,
-        });
-        setHistory((h) => ({
-          past: h.past.map(withFormat),
-          present: withFormat(h.present),
-          future: h.future.map(withFormat),
-        }));
-      }
+      if (written !== plan.format) setHistory((h) => setVideoExportFormatEverywhere(h, written));
       // After the shell's success toast, so the warning is the one left on screen.
       for (const warning of result.warnings) window.setTimeout(() => onStatus(warning, "info"), 0);
       return { fileName, format: written, note: result.notice };

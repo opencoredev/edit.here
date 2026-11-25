@@ -48,6 +48,8 @@ type ShellHeaderProps = {
   onShowKeybinds: () => void;
   onCloseFile: () => void;
   onCopy: () => void;
+  /** Copy from the narrow-phone More menu, where nothing on screen can show "Copied". */
+  onCopyFromMenu: () => void;
   /** Export in `format` (an `exportFormats` option id), or in the selected one. */
   onExport: (format?: string) => void;
   /** Called when any GitHub link in the header is opened. */
@@ -164,6 +166,7 @@ export function ShellHeader({
   onShowKeybinds,
   onCloseFile,
   onCopy,
+  onCopyFromMenu,
   onExport,
   onOpenGitHub,
 }: ShellHeaderProps) {
@@ -354,7 +357,7 @@ export function ShellHeader({
                         {/* The narrowest phones have no room for the header's Copy button. */}
                         <Menu.Item
                           disabled={copyDisabled}
-                          onClick={onCopy}
+                          onClick={onCopyFromMenu}
                           className="min-[380px]:hidden"
                         >
                           <Menu.ItemContent

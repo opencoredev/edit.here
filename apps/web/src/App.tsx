@@ -519,19 +519,26 @@ export function App() {
     [actions, send, session, snapshot],
   );
 
-  const runCopy = useCallback(() => {
-    const copy = actions.copy;
-    if (copy === undefined || actions.busy === true) return;
-    const kind = session?.kind;
-    settleCopy(copy(), {
-      onCopied: () => {
-        setCopied(true);
-        if (kind !== undefined) trackEvent("image_copied", { kind });
-      },
-      // The editor reports its own copy errors.
-      onFailed: () => setCopied(false),
-    });
-  }, [actions, session?.kind]);
+  /** `announce` toasts the copy, for a menu item that closes before it can say "Copied". */
+  const runCopy = useCallback(
+    (announce = false) => {
+      const copy = actions.copy;
+      if (copy === undefined || actions.busy === true) return;
+      const kind = session?.kind;
+      settleCopy(copy(), {
+        onCopied: () => {
+          setCopied(true);
+          if (announce) {
+            send({ type: "toast.show", message: "Copied to the clipboard.", tone: "success" });
+          }
+          if (kind !== undefined) trackEvent("image_copied", { kind });
+        },
+        // The editor reports its own copy errors.
+        onFailed: () => setCopied(false),
+      });
+    },
+    [actions, send, session?.kind],
+  );
 
   useEffect(() => {
     if (!copied) return;
@@ -701,7 +708,8 @@ export function App() {
               onOpenFile={chooseFile}
               onShowKeybinds={() => send({ type: "keybinds.open" })}
               onCloseFile={closeFile}
-              onCopy={runCopy}
+              onCopy={() => runCopy()}
+              onCopyFromMenu={() => runCopy(true)}
               onExport={(format) => void runExport(format)}
               onOpenGitHub={dismissStar}
             />
